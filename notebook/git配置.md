@@ -1011,3 +1011,162 @@ $ ssh-keygen -t rsa -C "youremail@example.com"
 
 回到github上，进入Account => Settings（账户配置）。
 
+![](/images/github01.jpg)
+
+左边选择**SSH and GPG keys**，然后点击 **New SSH key** 按钮，title设置标题，可以随便填，粘贴在你电脑上生成key。
+
+![](/images/github02.jpg)
+
+添加成功后界面如下所示
+
+<img src="/images/github03.jpg">
+
+为了验证是否成功，输入以下命令：
+
+```
+$ ssh -T git@github.com
+Hi tianqixin! You've successfully authenticated, but GitHub does not provide shell access.
+```
+
+以下命令说明我们已成功连上Github。
+
+之后登陆后点击“New repository”如下图：
+
+![](/images/github04.jpg)
+
+之后再Repository name填入 远程仓库名称，其他保持默认设置，点击“Create repository”按钮，就成功地创建了一个新的 Git 仓库：
+
+![](/images/github05.jpg)
+
+创建成功后，显示如下信息：
+
+![](/images/github06.jpg)
+
+以上信息告诉我们可以从这个仓库克隆出新的仓库，也可以把本地仓库的内容推送到Github仓库。
+
+现在，我们根据Github的提示，在本地的仓库下运行命令：
+
+```
+$ mkdir runoob-git-test                     # 创建测试目录
+$ cd runoob-git-test/                       # 进入测试目录
+$ echo "# 菜鸟教程 Git 测试" >> README.md     # 创建 README.md 文件并写入内容
+$ ls                                        # 查看目录下的文件
+README
+$ git init                                  # 初始化
+$ git add README.md                         # 添加文件
+$ git commit -m "添加 README.md 文件"        # 提交并备注信息
+[master (root-commit) 0205aab] 添加 README.md 文件
+ 1 file changed, 1 insertion(+)
+ create mode 100644 README.md
+
+# 提交到 Github
+$ git remote add origin git@github.com:tianqixin/runoob-git-test.git
+$ git push -u origin master
+```
+
+以下命令请根据你在Github成功创建新仓库的地方复制，而不是根据我提供的命令，因为我们的Github用户名不一样，仓库名也不一样。
+
+接下来我们返回Github创建的仓库，就可以看到文件已上传到Github上：
+
+![](/images/github07.jpg)
+
+### 查看当前的远程库
+
+要查看当前配置有哪些远程仓库，可以用命令：
+
+```
+git remote
+```
+
+#### 实例
+
+```
+$ git remote
+origin
+$ git remote -v
+origin    git@github.com:tianqixin/runoob-git-test.git (fetch)
+origin    git@github.com:tianqixin/runoob-git-test.git (push)
+```
+
+执行时加上 -v 参数，你还可以看到每个别名的实际链接地址。
+
+### 提取远程仓库
+
+Git 有两个命令用来提取远程仓库的更新。
+
+1、从远程仓库下载新分支与数据：
+
+```
+git fetch
+```
+
+该命令执行完后需要执行`git merge` 远程分支到你所在的分支。
+
+2、从远端仓库提取数据并尝试合并到当前分支：
+
+```
+git merge
+```
+
+该命令就是执行`git fetch` 之后紧接着执行`git merge` 远程分支到你所在的任意分支。
+
+假设你配置好了一个远程仓库，并且你想要提取更新的数据，你可以首先执行`git fetch [alias]` 告诉 Git 去获取它有你没有的数据，然后你可以执行`git merge [alias]/[branch]` 以将服务器上的任何更新（假设有人这时候推送到服务器了）合并到你的当前分支。
+
+接下来我们再github上点击“README.md”并在线修改它：
+
+ ![](/images/github08.jpg)
+
+然后我们在本地更新修改
+
+```
+$ git fetch origin
+remote: Counting objects: 3, done.
+remote: Compressing objects: 100% (2/2), done.
+remote: Total 3 (delta 0), reused 0 (delta 0), pack-reused 0
+Unpacking objects: 100% (3/3), done.
+From github.com:tianqixin/runoob-git-test
+   0205aab..febd8ed  master     -> origin/master
+```
+
+以上同步信息"0205aab..febd8ed  master     -> origin/master" 说明 master 分支已被更新，我们可以使用以下命令将更新同步到本地：
+
+```
+$ git merge origin/master
+Updating 0205aab..febd8ed
+Fast-forward
+ README.md | 1 +
+ 1 file changed, 1 insertion(+)
+```
+
+查看README.md文件内容：
+
+```
+$ cat README.md
+# 菜鸟教程 Git 测试
+## 第一次修改内容
+```
+
+### 推送到远程仓库
+
+推送你的新的分支与数据到某个远程仓库命令：
+
+```
+git push [alias] [branch]
+```
+
+以上命令将你的[branch]分支推送成为 [alias] 远程仓库上的 [branch] 分支，实例如下。
+
+```
+$ touch runoob-test.txt        # 添加文件
+$ git add runoob-test.txt
+$ git commit -m "添加到远程"
+master 69e702d] 添加到远程
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+ create mode 100644 runoob-test.txt
+$ git push origin master		# 推送到  Github
+```
+
+重新回到我们的 Github 仓库， 可以看到文件以及提交上来了：
+
+
+
