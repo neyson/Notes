@@ -1,0 +1,101 @@
+ndarray创建
+	np.array(object, dtype=None, copy=True, order='K', subok=False, ndmin=0)：
+		接收一个普通的python序列，并将其转换为ndarray
+		array(object, dtype=None, copy=Trye, order=None, subok=false,ndmin=0)
+			
+	np.zeros(shape, dtype=float, order='C')：
+		创建指定长度或者形状的全零数组。
+	np.ones(shape, dtype=None, order='C')：
+		创建指定长度或者形状的全1数组
+	np.empty(shape, dtype=float, order='C')：
+		创建一个未初始化的数组
+	np.arange([start,] stop[, step,], dtype=None)：
+		指定开始值、终值和步长来创建一个一维数组
+	np.linspace(start, stop, num=50, endpoint=True, retstep=False, dtype=None)：
+		通过指定开始值、终值和元素个数来创建一个一维数组，数组的数据元素符合等差数列，可以通过endpoint关键字指定是否包含终止值，默认包含终值
+	np.logspace(start, stop, num=50, endpoint=True, base=10.0, dtype=None):
+		和linspace类似，不过创建的是等比数列数组
+	np.random.random((3,2,3)):
+		使用随机数填充数据，数组包含的元素数量有参数决定
+		
+
+ndarray属性
+	dtype:
+		说明数组元素数据类型
+		类型转换：ndarray.astype(float)
+	shape：
+		一个数组的各个维度的大小的元组，即数组的形状
+		修改形状：ndarray.reshape(x,-1)
+	size：
+		元素总个数，即shape中各个数的相乘
+	ndim：
+		一个数组的维度数量
+	axis=0:
+		表示对行操作，此时运算的是同一列的元素
+	axis=1：
+		表示对列操作，此时运算的是同一行的元素
+
+索引及切片
+	arr[0][1][2];arr[0,1,2]
+	布尔类型数组 
+		B=A<0.5
+		C=A[B]
+		输出一个一维数组包括A里面的所有大于0.5的元素
+	花式索引
+		arr[[0,3,5]]
+			获取第0、3、5行的数据
+		arr[[0,3,5],[0,3,2]]
+			获取第[0,0] [3,3] [5,2]这三个索引位置的数据
+		arr[np.ix_([0,3,5],[0,3,2])]
+			获取第0、3、5行的第0、2、3列的数据
+
+函数：
+	arr.dot(arr2):或者np.dot(arr,arr2)
+		矩阵的数量积、点积
+	arr.transpose(a, axes=None)或者arr.T
+		矩阵转置，也可通过np.transpose(arr, (1, 0, 2))，来规定具体转置的顺序，默认是(2,1,0)
+	np.modf(arr)
+		将数组中的小数位和整数位以两部分独立数组的形式返回
+	np.isnan(arr)
+		判断是否为nan，返回布尔数组
+	np.isfinite(arr)
+		是否有限数值，返回布尔数组
+	np.isinf(arr)
+		是否为无限数字，返回布尔数组
+	其他：
+		np.abs(arr)   np.fabs(arr)   np.sqrt(arr)
+		np.square(arr)   np.exp(arr)   np.sign(arr)计算各个元素的正负号: 1 正数，0：零，-1：负数
+		np.ceil(arr)   np.floor(arr)   np.rint(arr)向上取整、向下取整、四舍五入
+		np.cos(arr)   np.sin(arr)   np.tan(arr)
+		np.arccos(arr)   np.arrsin(arr)   np.arrtan(arr)
+		np.mod(arr1,arr2)   np.greater(arr1,arr2)   np.less(arr1,arr2)
+		np.equal(arr1,arr2)
+	元素级逻辑运算
+		np.logical_and(arr1,arr2)
+		np.logical_or(arr1,arr2)
+		np.logical_xor(arr1,arr2)
+	np.power(arr,3)
+		类似于arr**3
+	np.log(arr)		以e为底
+	np.log10(arr)	以10为低
+	np.log2(arr)	以2为底
+	np.log1p(arr)	以（1+x）为底
+	
+聚合函数：
+	arr.mean()
+		平均值，可根据axis来计算行列
+	arr.min()
+		最小值，可根据axis来计算行列
+	arr.max()
+		最大值，可根据axis来计算行列
+	arr.std()
+		标准差，可根据axis来计算行列
+		
+np.where
+	condition=arr1<arr2
+	res=np.where(condition,arr1,arr2)
+	
+	condition=np.isnan(arr)|np.isinf(arr)
+	res=np.where(condition,0,arr)
+np.unique
+	res=np.unique(arr)

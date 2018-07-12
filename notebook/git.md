@@ -1178,5 +1178,26 @@ git remote rm [别名]
 
 #### 实例
 
+```
+$ git remote -v
+origin    git@github.com:tianqixin/runoob-git-test.git (fetch)
+origin    git@github.com:tianqixin/runoob-git-test.git (push)
+
+# 添加仓库 origin2
+$ git remote add origin2 git@github.com:tianqixin/runoob-git-test.git
+
+$ git remote -v
+origin    git@github.com:tianqixin/runoob-git-test.git (fetch)
+origin    git@github.com:tianqixin/runoob-git-test.git (push)
+origin2    git@github.com:tianqixin/runoob-git-test.git (fetch)
+origin2    git@github.com:tianqixin/runoob-git-test.git (push)
+
+# 删除仓库 origin2
+$ git remote rm origin2
+$ git remote -v
+origin    git@github.com:tianqixin/runoob-git-test.git (fetch)
+origin    git@github.com:tianqixin/runoob-git-test.git (push)
+```
+
 
 

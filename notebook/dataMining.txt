@@ -1,0 +1,42 @@
+﻿数据探索
+1、DataFrame.info()
+	查看各列的数据的类型及个数
+	查看总的内存使用情况，总的样本个数，总的特征个数
+2、DataFrame.apply(lambda x:sum(x.isnull()),axis=0)
+	统计各列缺失值np.nan的个数
+3、Series.describe()
+	统计单列都有哪些值，有几种类别，出现频率最高的是什么，以及这些值总个数
+4、DataFrame.drop('Loan_ID',axis=1,inplace=True)
+	删除'loan_ID'这一列，并替换原dataFrame
+5、DataFrame.dropna(axis=0, how='any', thresh=None, subset=None, inplace=False)
+	删除行axis=0
+	删除列axis=1
+	how='any',只要有一个nan则删除整行或者整列
+	how='all',所有元素都是nan则删除整行或整理
+6、Series.value_counts()
+	统计各值出现的次数
+7、DataFrame.item
+	item位某列的标签，返回对应的列的Series格式数据
+8、pd.unique(Series)
+	查看某列的值都有哪些种类
+9、查看非数值列的种类个数
+	for col in data.select_dtypes(include=['object']).columns:
+		print("Column {} has {} unique instances".format(col, len(data[col].unique())))
+10、DataFrame.select_dtypes(include=['object']
+	挑选某种类型的所有列数据
+11、查看’object’或者'float'类型特征的情况，计算nan的缺失率
+	data.select_dtypes(include=['object']).describe().T.assign(missing_pct=data.apply(lambda x:(len(x)-x.count())/float(len(x))))
+12、变量的排序
+	data.sort_values(['A','B'],ascending=False)
+		False表示由大到小，A的顺序排列，再按B的顺序排列
+13、pd.crosstab(data['Credit_History'],data['Loan_Status'],margins=True)
+	统计列项之间的数量关系
+	pd.crosstab(data['Credit_History'],data['Loan_Status'],margins=True).apply(lambda x: x/x[-1],axis=1)
+	数量关系转换成百分比
+14、data.hist(column='A', by='B', bins=30)
+	快速查看B列的每种情况下，A的属性的分布情况，A、B为DataFrame的列名
+15、DataFrame.corr()
+	展示协方差矩阵
+16、快速分离输入输出方法
+	Y=data.Loan_Status
+	X=data.drop('Loan_Status',1,inplace=True)	
