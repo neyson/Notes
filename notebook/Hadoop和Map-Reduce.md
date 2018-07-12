@@ -58,7 +58,45 @@ HDFS设计之初就是针对超大文件的存储的，小文件不会提高访�
 
 ### HDFS常见命令
 
-显示/下的所有文件夹信息
+```
+# 显示/下的所有文件夹信息
+hadoop fs -ls /
+
+# 递归显示所有文件夹和子文件（夹）
+hadoop fs -lsr
+
+# 创建/user/hadoop目录
+hadoop fs -mkdir /user/hadoop
+
+# 把a.txt放到集群/user/hadoop/文件夹下
+hadoop fs -put a.txt /user/hadoop/
+
+# 把集群上的/user/hadoop/a.txt拉到本地/目录下
+hadoop fs -get /user/hadoop/a.txt /
+
+# 集群上复制文件
+hadoop fs -cp src dst
+
+# 集群上移动文件
+hadoop fs -mv src dst
+
+# 查看集群上文件/user/hadoop/a.txt的内容
+hadoop fs -cat /user/hadoop/a.txt
+
+# 删除集群上/user/hadoop/a.txt
+hadoop fs -rm /user/hadoop/a.txt
+
+# 删除目录和目录下所有文件
+hadoop fs -rmr /user/hadoop/a.txt
+
+# 与hadoop fs -put功能类似
+hadoop fs -copyFromLocal localsrc dst
+
+# 将本地文件上传到hdfs， 同时删除本地文件
+hadoop fs -moveFromLocal localsrc dst
+```
+
+
 
 ## MapReduce
 
@@ -91,3 +129,4 @@ MapReduce会这样做：首先数字是分布存储在不同块中的，以某�
 总的来说，Hadoop适合用于大数据存储和大数据分析的应用，适合于服务器几千台到几万台的机群运行，我们支持PB级的存储容量
 
 Hadoop典型应用有：搜索，日志处理，推荐系统，数据分析，视频图像分析，数据保存等。
+

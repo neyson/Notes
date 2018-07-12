@@ -394,7 +394,7 @@ $ $ git commit -m '第一次版本提交'
  现在我们已经记录了快照，如果我们再执行git status：
 
  ```
- $ git status
+$ git status
 # On branch master
 nothing to commit (working directory clean)
  ```
