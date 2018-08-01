@@ -71,7 +71,7 @@ rdd.first()
 
 你甚至可以很粗暴的读入整个文件夹的所有文件。
 
-但是要特别注意，这种读法，RDD中的每个item实际上是一个形如（文件名，文件所有内容）的元组。
+但是要特别注意，这种读法，**RDD中的每个item实际上是一个形如（文件名，文件所有内容）的元组。**
 
 ```python
 rdd = sc.wholeTextFiles('file://' + cwd + 'names')
@@ -79,5 +79,49 @@ rdd
 # out[]: org.apache.spark.api.java.JavaPairRDD@6b954745
 rdd.first()
 # out[]:(u'file:/home/ds/notebooks/spark/names/yob1880.txt', u'Mary,F,70...')
+```
+
+## 其余初始化RDD的方法
+
+RDD还可以通过其他的方式初始化，包括
+
++ HDFS上的文件
++ Hive中的数据库与表
++ Spark SQL得到的结果
+
+## RDD transformation 的那些事
+
+大家还对python的list comprehension有印象吗，RDD可以进行一系列的变换得到新的RDD，有点类型那个过程，我们先给大家提一下RDD上最常用的transformation：
+
+* `map() ` 对RDD的每一个item都执行同一个操作
+* `flatMap()` 对RDD中的item执行统一操作以后得到一个list，然后以平铺的方式把这些list里所有的结果组成新的list
+* `filter() `筛选出来满足条件的item
+* `distinct()` 对RDD中的item去重
+* `sample()` 从RDD中的item中采样一部分出来，有放回或者无放回
+* `sortBy()` 对RDD中的item进行排序
+
+**如果你想到操作后的结果，可以用一个叫做`collect()`的action把所有的item转换成一个Python list。**
+
+简单的例子如下：
+
+```python
+numbersRDD = sc.parallelize(range(1,10+1))
+print(numbersRDD.collect())
+# [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+squaresRDD = numbersRDD.map(lambda x:x**2)
+# [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]
+filteredRDD = numbersRDD.filter(lambda x:x%2==0)
+# [2, 4, 6, 8, 10]
+```
+
+然后咱们看看`flatMap()`的平展功能：
+
+```python
+sentencesRDD = sc.parallelize(['Hello word', 'My name is Patrick'])
+wordsRDD = sentencesRDD.flatMap(lambda sentence: sentence.split(' '))
+print(wordsRDD.collect())
+# ['Hello', 'world', 'My', 'name', 'is', 'Patrick']
+print(wordsRDD.count())
+# 6
 ```
 
