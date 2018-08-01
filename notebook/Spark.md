@@ -41,3 +41,43 @@ rdd.getNumPartitions()
 # 4
 ```
 
+如果你想看看分区状况怎么办
+
+```python
+rdd.glom().collect()
+# [[1], [2], [3], [4, 5]]
+```
+
+在这个例子中，是一个4个节点的Spark集群。Spark创建了4个executor，然后把数据分成4个块
+
+**tips：使用 `sc.parallelize`，你可以把python list，Numpy array 或者 Pandas Series，Pandas DataFrame 转成Spark RDD。**
+
+## 初始化RDD方法2
+
+第二种方式当时是直接把文本读到RDD了
+
+你的每一行都会被当做item，不过需要注意的一点是，Spark一般默认你的路径指向HDFS的，如果你要从本地读取文件的话，给一个file://开头的全局路径。
+
+```python
+# Record current path for future use
+import os
+cwd = os.getcwd()  # 获取当前路径
+rdd = sc.textFile("file://"+cwd+"/names/yob1880.txt")
+rdd
+# Out[]:file:///home/ds/notebooks/spark/names/yob1880.txt MapPartitionsRDD[3] at textFile at NativeMethodAccessorImpl.java:-2
+rdd.first()
+# 显示第一个rdd中的第一个元素
+```
+
+你甚至可以很粗暴的读入整个文件夹的所有文件。
+
+但是要特别注意，这种读法，RDD中的每个item实际上是一个形如（文件名，文件所有内容）的元组。
+
+```python
+rdd = sc.wholeTextFiles('file://' + cwd + 'names')
+rdd
+# out[]: org.apache.spark.api.java.JavaPairRDD@6b954745
+rdd.first()
+# out[]:(u'file:/home/ds/notebooks/spark/names/yob1880.txt', u'Mary,F,70...')
+```
+
