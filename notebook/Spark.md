@@ -125,3 +125,137 @@ print(wordsRDD.count())
 # 6
 ```
 
+为了做一个小小的对应，咱们看看python里对应的操作大概是什么样的：
+
+```python
+l=['Hello World', 'My name is Patrick']
+ll = []
+for sentence in l:
+    ll = ll + sentence.split(' ')
+print(ll)
+# ['Hello', 'world', 'My', 'name', 'is', 'Patrick']
+```
+
+比较酷炫的是，前面提到的Transformation， 可以一个接一个的串联，比如：
+
+```python
+def doubleIfOdd(x):
+    if x % 2 ==1:
+        return 2 * x
+    else:
+        return x
+resultRDD = (numberRDD  # [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            .map(doubleIfOdd)  # [2, 2, 6, 4, 10, 6, 14, 8, 18, 10]
+            .filter(lambda x : x > 6) # [10, 14, 8, 18 ,10]
+            .distinct())
+resultRDD.collect()
+# [8, 10, 18, 14]
+```
+
+## RDD间的操作
+
+如果你手头上有两个RDD了，下面的这些操作能够帮你对他们以各种方式组合得到1个RDD：
+
+* `rdd1.union(rdd2)` ：所有rdd1和rdd2中的item组合
+* `rdd1.intersection(rdd2)`：rdd1和rdd2的交集
+* `rdd1.substract(rdd2)`：所有在rdd1中但不在rdd2中的item（差集）
+* `rdd1.cartesian(rdd2)`：rdd1和rdd2中所有的元素笛卡尔乘机
+
+简单的例子如下：
+
+```python
+numbersRDD = sc.parallelize([1,2,3])
+moreNumberRDD = sc.parallelize([2,3,4])
+print(numbersRDD.union(moreNumberRDD).collect()) # 并集
+# [1, 2, 3, 2, 3, 4]
+numbersRDD.intersection(moreNumberRDD).collect() # 交集
+# [2, 3]
+numbersRDD.subtract(moreNumberRDD).collect() # 差集
+# [1]
+numbersRDD.cartesian(moreNumbersRDD).collect() # 笛卡尔积
+# [(1, 2), (1, 3), (1, 4), (2, 2), (2, 3), (2, 4), (3, 2), (3, 3), (3, 4)]
+```
+
+特别注意：Spark的一个核心概念是**惰性计算**。当你把一个RDD转换成另一个的时候，这个转换不会立刻生效执行！！！Spark慧把它先记在心里，等到真的需要拿到转换结果的时候，才会重新组织你的transformations（因为可能有一连串的变换）这样可以避免不必要的中间结果存储和通信。
+
+刚才提到了**惰性计算**，那么什么东西能让它真的执行转换和计算呢？是的，就是我们马上提到的Actions， 下面是常见action，当他们出现的时候，表明我们需要执行刚才定义的transformations了：
+
++ collect() ：计算所有的items并返回所有的结果到driver端，接着collect()会以python list的形式返回结果
++ first()：和上面的类似，不过只返回第一个item
++ tack(n)：类似，但是返回n个item
++ count()：计算RDD中item的个数
++ top(n)：返回头n个items，按照自然结果排序
++ reduce()：对RDD中的item做聚合
+
+我们之前已经看到collect(),first()和count()的例子了， 俺们看看reduce()如何使用。比如Spark里从1到10你可以这么做。
+
+```python
+rdd = sc.parallelize(range(1,10+1))
+rdd.reduce(lambda x,y : x+y)
+# 55
+```
+
+如果你想理解一下reduce的细节的话，其实可能会先在每个分区（partition）里完成reduce操作，然后全局的进行reduce。这个过程你可以从如下代码大致理解
+
+```python
+def f(x,y):
+    return x+y:
+l = [1,2,3,4]
+f(f(f(l[0],l[1]),l[2]),l[3])  # 10
+```
+
+有一个很有用的操作，我们试想一下，有时候我们需要重复用到某个transformation序列得到的RDD结果。但是一遍遍重复计算显然是要开销的，所以我们可以通过一个叫做`cache()`的操作把它暂时存储在内存中：
+
+```python
+# Caluculate the average of all the squares from 1 to 10
+import numpy as np
+numbersRDD = sc.parallelize(np.linspace(1.0, 10.0, 10))
+squaresRDD = numbersRDD.map(lambda x : x**2)
+
+squaresRDD.cache()  # Preserve the actual items of this RDD in memory
+avg = squaresRDD.reduce(lambda x,y:x+y)/squaresRDD.count()
+
+# 38.5
+```
+
+缓存RDD结果对于重复迭代的操作非常有用，比如很多机器学习的算法，训练过程需要重复迭代。
+
+### 练习作业
+**我们知道牛顿法求$\sqrt{n}$(达到eps准确度)的算法是这样的：**
+* **给定一个初始值 $x = 1.0$.**
+* **求$x$和$n / x$的平均$(x + n/x)/2$**
+* **根据$(x + n/x)/2$和$\sqrt{n}$的大小比较，确定下一步迭代的2个端点，同时不断迭代直至$x*x$与$n$之间的差值小于$eps$.**
+
+**在Spark中完成上述算法**  
+```python
+rdd = sc.parallelize([2])
+x = 1.0
+while abs(x**2-2)>1e-9:
+    x = rdd.map(lambda n: (n, (x+n/x)/2)).first()[1]
+print(x)
+# 1.4142135623746899
+```
+
+## 针对更复杂结构的transformation和action
+
+咱们刚才已经见识了Spark中最常见的transformation和action，但是有时候我们会遇到更复杂的结构，比如非常经典的是以元组形式组成的k-v对（key，value），我们把它叫做pair RDDs，而Spark中针对这种item结构的数据，定义了一些transformation和action：
+
+* `reduceByKey()`：对所有有着相同key的items执行reduce操作
+* `groupByKey()`：返回类似`（key，listOfValues）`元组的RDD，后面的value list是同一个key下面的
+* `sortByKey()`：按照key排序
+* `countByKey()`：按照key去对item个数进行统计
+* `collectAsMap()`：和collect有些类似，但是返回的是k-v字典
+
+```python
+rdd = sc.parallelize(["Hello hello", "Hello New York", "York says hello"])
+resultRDD = (
+    rdd
+    .flatMap(lambda sentence:sentence.split(' '))  # split into words
+    .map(lambda word:word.lower())  # lowercase
+    .map(lambda word:(word, 1))   # count each appearance
+    .reduceByKey(lambda x,y:x+y)  # add counts for each word
+)
+resultRDD.collect()
+# [('says', 1), ('new', 1), ('hello', 4), ('york', 2)]
+```
+
