@@ -16,7 +16,7 @@ RDD就像一个numpy中的array或者Pandas中的Series，可以视作一个有�
 
 RDD是最重要的载体，我们看看如何初始化这么一个对象：
 
-## 初始化RDD方法1
+### 初始化RDD方法1
 
 如果你本地内存中已经有一份序列数据（比如python的list），你可以通过`sc.parallelize`去初始化一个RDD
 
@@ -52,7 +52,7 @@ rdd.glom().collect()
 
 **tips：使用 `sc.parallelize`，你可以把python list，Numpy array 或者 Pandas Series，Pandas DataFrame 转成Spark RDD。**
 
-## 初始化RDD方法2
+### 初始化RDD方法2
 
 第二种方式当时是直接把文本读到RDD了
 
@@ -81,7 +81,7 @@ rdd.first()
 # out[]:(u'file:/home/ds/notebooks/spark/names/yob1880.txt', u'Mary,F,70...')
 ```
 
-## 其余初始化RDD的方法
+### 其余初始化RDD的方法
 
 RDD还可以通过其他的方式初始化，包括
 
@@ -89,7 +89,7 @@ RDD还可以通过其他的方式初始化，包括
 + Hive中的数据库与表
 + Spark SQL得到的结果
 
-## RDD transformation 的那些事
+### RDD transformation 的那些事
 
 大家还对python的list comprehension有印象吗，RDD可以进行一系列的变换得到新的RDD，有点类型那个过程，我们先给大家提一下RDD上最常用的transformation：
 
@@ -152,7 +152,7 @@ resultRDD.collect()
 # [8, 10, 18, 14]
 ```
 
-## RDD间的操作
+### RDD间的操作
 
 如果你手头上有两个RDD了，下面的这些操作能够帮你对他们以各种方式组合得到1个RDD：
 
@@ -220,7 +220,7 @@ avg = squaresRDD.reduce(lambda x,y:x+y)/squaresRDD.count()
 
 缓存RDD结果对于重复迭代的操作非常有用，比如很多机器学习的算法，训练过程需要重复迭代。
 
-### 练习作业
+#### 练习作业
 **我们知道牛顿法求$\sqrt{n}$(达到eps准确度)的算法是这样的：**
 * **给定一个初始值 $x = 1.0$.**
 * **求$x$和$n / x$的平均$(x + n/x)/2$**
@@ -236,7 +236,7 @@ print(x)
 # 1.4142135623746899
 ```
 
-## 针对更复杂结构的transformation和action
+### 针对更复杂结构的transformation和action
 
 咱们刚才已经见识了Spark中最常见的transformation和action，但是有时候我们会遇到更复杂的结构，比如非常经典的是以元组形式组成的k-v对（key，value），我们把它叫做pair RDDs，而Spark中针对这种item结构的数据，定义了一些transformation和action：
 
@@ -259,3 +259,188 @@ resultRDD.collect()
 # [('says', 1), ('new', 1), ('hello', 4), ('york', 2)]
 ```
 
+我们可以将结果以k-v字典的形式返回
+
+```python
+result = resultRDD.collectAsMap()
+print(result)
+# {'hello': 4, 'new': 1, 'says': 1, 'york': 2}
+
+resultRDD.sortBy(keyfunc=lambda (word, count):count, ascending=False).take(2)
+# 统计出现频次最高的2个词
+# out[]: [('hello', 4), ('york', 2)]
+```
+
+还有一个很有意思的操作时，在给定2个RDD后，我们可以通过一个类似SQL的方式去join他们。
+
+```python
+# Home of different people
+homesRDD = sc.parallelize([
+        ('Brussels', 'John'),
+        ('Brussels', 'Jack'),
+        ('Leuven', 'Jane'),
+        ('Antwerp', 'Jill'),
+    ])
+
+# Quality of life index for various cities
+lifeQualityRDD = sc.parallelize([
+        ('Brussels', 10),
+        ('Antwerp', 7),
+        ('RestOfFlanders', 5),
+    ])
+homesRDD.join(lifeQualityRDD).collect()
+# [('Antwerp', ('Jill', 7)),
+#  ('Brussels', ('John', 10)),
+#  ('Brussels', ('Jack', 10))]
+```
+
+## Spark SQL&DataFrame
+
+Spark SQL 是Spark处理数据结构化数据的一个模块，与基础的SparkRDD API不同，SparkSQL提供查询结构化数据及计算结果等信息的结构。在内部，SparkSQL使用这个额外的信息去执行额外的优化，有几种方式进行交互，包括SQL和Dataset API。当使用相同执行引擎进行计算时，无论使用哪种API 语言都可以快速的计算。
+
+**SQL**
+
+Spark SQL的功能之一就是执行SQL查询，Spark SQL也能够被用于从已存在的Hive环境中读取数据。当以另外的编程语言运行SQL时，查询结构将以Dataset/DataFrame的形式返回，也可以使用命令行或者通过JDBC/ODBC与SQL接口交互。
+
+**DataFrames**
+
+从RDD里可以生成类似大家在pandas中的DataFrame，同时可以方便地在上面完成各种操作。
+
+### 构建SparkSession
+
+Spark SQL中所有功能的入口点时SparkSession类。要创建一个SparkSession，仅使用SparkSession.buider()就可以了：
+
+```python
+from pyspark.sql import SparkSession
+spark = (
+    SparkSession
+    .builder
+    .appName('python spark sql')
+    .config('spark.some.config.option','some-value')
+    .getOrCreate()
+)
+```
+
+### 创建DataFrames
+
+在一个SparkSession中，应用程序可以从一个已经存在的RDD或者hive表，或者从Spark数据源中创建一个DataFrame。
+
+举个例子，下面就是基于一个json文件创建一个DataFrame：
+
+```python
+df = spark.read.json('data/people.json')
+df.show()
+# +----+-------+
+# | age|   name|
+# +----+-------+
+# |null|Michael|
+# |  30|   Andy|
+# |  19| Justin|
+# +----+-------+
+```
+
+### DataFrame操作
+
+DataFrames 提供一个特定的语法用在Scala，java，Python and R中机构化数据的操作。
+
+在Python中，可以通过`df.age`或者`df['age']`来获取DataFrame的列。虽然前者便于交互式操作，但是还是建议使用后者，这样不会破坏列名，也能引用DataFrame的类
+
+#### select 操作
+
+```python
+df.printSchema()  # 相当于df.info()
+df.select('name').show()  # 选择单列
+# +-------+
+# |   name|
+# +-------+
+# |Michael|
+# |   Andy|
+# | Justin|
+# +-------+
+df.select(['name','age']).show()  # 选择多列
+# +-------+----+
+# |   name| age|
+# +-------+----+
+# |Michael|null|
+# |   Andy|  30|
+# | Justin|  19|
+# +-------+----+
+df.select(df['name'], df['age']+1).show()
+# +-------+---------+
+# |   name|(age + 1)|
+# +-------+---------+
+# |Michael|     null|
+# |   Andy|       31|
+# | Justin|       20|
+# +-------+---------+
+```
+
+#### filter操作
+
+```python
+df.filter(df['age']>21).show()
+#+---+----+
+#|age|name|
+#+---+----+
+#| 30|Andy|
+#+---+----+
+df.groupBy('age').count().show()
+#+----+-----+
+#| age|count|
+#+----+-----+
+#|  19|    1|
+#|null|    1|
+#|  30|    1|
+#+----+-----+
+```
+
+### Spark SQL
+
+SparkSession的sql函数可以让应用程序以编程的方式运行SQL查询，并将结果作为一个DataFrame返回。
+
+```python
+df.createOrReplaceTempView('people')
+sqlDF = spark.sql('SELECT * FROM people')
+sqlDF.show()
+#+----+-------+
+#| age|   name|
+#+----+-------+
+#|null|Michael|
+#|  30|   Andy|
+#|  19| Justin|
+#+----+-------+
+```
+
+### Spark DataFrame于RDD交互
+
+Spark SQL支持两种不同的方法用于转换以存在的RDD成为Dataset
+
+第一种方式是使用反射去推断一个包含指定的对象类型的RDD的Schema。在你的Spark应用程序中，当你一直Schema时这个机遇方法的反射可以让你的代码更简洁。
+
+第二种用于创建Dataset的方法是通过一个允许你构造一个Schema然后把它应用到一个已存在的RDD的编程接口。然而这种方法更繁琐，当列和他们的类型知道运行时都是未知时它允许你去构造Dataset
+
+**反射推断**
+
+```python
+from pyspark.sql import Row
+sc = spark.sparkContext
+lines = sc.textFile('data/people.txt')
+parts = lines.map(lambda l:l.split(',')) # rdd
+people = parts.map(lambda p:Row(name=p[0], age=int(p[1])))
+
+# Infer the schema, and register the DataFrame as a table
+schemaPeople = spark.createDataFrame(people) # df
+schemaPeople.createOrReplaceTempView('people')  # schema
+
+teenagers = spark.sql("SELECT name FROM people WHERE age >= 13 AND age <= 19")
+type(teenagers)  # pyspark.sql.dataframe.DataFrame
+type(teenagers.rdd)  # pyspark.rdd.RDD
+teenagers.rdd.first()  # Row(name='Justin')
+
+teenNames = teenagers.rdd.map(lambda p: "Name: " + p.name).collect()
+for name in teenNames:
+    print(name)
+# Name: Justin
+```
+
+以编程的方式指定Schema
