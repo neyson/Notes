@@ -443,4 +443,492 @@ for name in teenNames:
 # Name: Justin
 ```
 
-以编程的方式指定Schema
+**以编程的方式指定Schema**
+
+也可以通过以下的方式去初始化一个`DataFrame`。
+
++ RDD从原始的RDD创建一个RDD的`tuples`或者一个列表；
++ Step1被创建后，创建schema表示一个`StructType`匹配RDD中的结构。
++ 通过`SparkSession`提供的`createDataFrame`方法应用`Schema`到RDD。
+
+```python
+from pyspark.sql.types import *
+sc = spark.sparkContext
+
+# Load a text file and convert each line to a Row.
+lines = sc.textFile('data/people.txt')
+parts = lines.map(lambda l:l.split(','))
+# Each line is converted to a tuple.
+people = parts.map(lambda p:(p[0],p[1].strip()))
+
+# The schema is encoded in a string.
+schemaString = 'name age'
+fields = [StructField(field_name, StringType(), True) for field_name in schemaString.split()]
+schema = StructType(fields)
+
+# Apply the schema to the RDD.
+schemaPeople = spark.createDataFrame(people, schema)
+
+schemaPeople.createOrReplaceTempView('people')
+result = spark.sql('SELECT name FROM people')
+result.show()
+# +-------+
+# |   name|
+# +-------+
+# |Michael|
+# |   Andy|
+# | Justin|
+# +-------+
+```
+
+## Spark DataFrame SQL 实例
+
+### 初始化Spark Session
+
+```python
+from pyspark.sql import SparkSession
+
+spark = (
+    SparkSession
+    .builder
+    .appName('python spark sql')
+    .config('spark.some.config.option','some-value')
+    .getOrCreate()
+)
+```
+
+### 构建数据集和序列化
+
+```python
+stringJSONRDD = spark.sparkContext.parallelize((""" 
+  { "id": "123",
+    "name": "Katie",
+    "age": 19,
+    "eyeColor": "brown"
+  }""",
+   """{
+    "id": "234",
+    "name": "Michael",
+    "age": 22,
+    "eyeColor": "green"
+  }""", 
+  """{
+    "id": "345",
+    "name": "Simone",
+    "age": 23,
+    "eyeColor": "blue"
+  }""")
+)
+# 构建DataFrame
+swimmersJSON = spark.read.json(stringJSONRDD)
+# 创建临时表
+swimmersJSON.createOrReplaceTempView('swimmersJSON')
+# DataFrame 信息
+swimmersJSON.show()
+# +---+--------+---+-------+
+# |age|eyeColor| id|   name|
+# +---+--------+---+-------+
+# | 19|   brown|123|  Katie|
+# | 22|   green|234|Michael|
+# | 23|    blue|345| Simone|
+# +---+--------+---+-------+
+
+# 执行SQL请求
+spark.sql('select * from swimmersJSON').collect()
+# [Row(age=19, eyeColor='brown', id='123', name='Katie'),
+#  Row(age=22, eyeColor='green', id='234', name='Michael'),
+#  Row(age=23, eyeColor='blue', id='345', name='Simone')]
+
+# 输出数据表的格式
+swimmersJSON.printSchema()
+# root
+#  |-- age: long (nullable = true)
+#  |-- eyeColor: string (nullable = true)
+#  |-- id: string (nullable = true)
+#  |-- name: string (nullable = true)
+
+# 执行SQL
+spark.sql('select count(1) from swimmersJSON')  
+# out[]: DataFrame[count(1): bigint]
+spark.sql('select count(1) from swimmersJSON').show()
+# +--------+
+# |count(1)|
+# +--------+
+# |       3|
+# +--------+
+```
+
+### DataFrame的请求方式 vs SQL的写法
+
+```python
+# DataFrame 的写法
+swimmersJSON.select('id','age').filter('age=2').show()
+# +---+---+
+# | id|age|
+# +---+---+
+# |234| 22|
+# +---+---+
+
+# SQL的写法
+spark.sql('select id, age from swimmersJSON where age=22').show()
+# +---+---+
+# | id|age|
+# +---+---+
+# |234| 22|
+# +---+---+
+
+# DataFrame的写法
+swimmersJSON.select('name','eyeColor').filter('eyeColor like "b%"').show()
+# +------+--------+
+# |  name|eyeColor|
+# +------+--------+
+# | Katie|   brown|
+# |Simone|    blue|
+# +------+--------+
+
+# SQL的写法
+spark.sql('select name, eyeColor from swimmersJson where eyeColor like "b%"').show()
+# +------+--------+
+# |  name|eyeColor|
+# +------+--------+
+# | Katie|   brown|
+# |Simone|    blue|
+# +------+--------+
+```
+
+## Spark 特征工程
+
+### 对连续值得处理
+
+#### 1.Binarizer / 二值化
+
+```python
+from spspark.sql import SparkSession
+from pyspark.ml.feature import Binarizer
+
+spark = SparkSession.buider.appName('BinarizerExample').getOrCreate()
+continuousDataFram = spark.createDataFrame([
+    (0, 1.1),
+    (1, 8.5),
+    (2, 5.2)
+], ['id', 'feature'])
+binarizer = Binarizer(threshold=5.1, inputCol='feature', outputcol='binarized_feature')
+binarizedDataFrame = binarizer.transform(continuousDataframe)
+print('Binarizer output with Threshold = %f' % binarizer.getThreshold())
+binarizedDataFrame.show()
+spark.stop()
+```
+
+输出结果为：
+
+```
+Binarizer output with Threshold = 5.100000
++---+-------+-----------------+
+| id|feature|binarized_feature|
++---+-------+-----------------+
+|  0|    1.1|              0.0|
+|  1|    8.5|              1.0|
+|  2|    5.2|              1.0|
++---+-------+-----------------+
+```
+
+#### 2.按照给定边界离散化
+
+```python
+from pyspark.sql import SparkSession
+from pyspark.ml.feature import Bucketizer
+
+spark = SparkSession.builder.appName('BucketizerExample').getOrCreate()
+
+splits = [-float('inf'), -0.5, 0.0, 0.5, float('inf')]
+data = [(-999.9,), (-0.5,), (-0.3,), (0.0,), (0.2,), (999.9,)]
+dataFrame = spark.createDataFrame(data, ['features'])
+
+bucketizer = Bucketizer(splits=split, inputCol='features', outputCol='bucketedFeatures')
+
+# 按照给定的边界进行分桶
+bucketedData = bucketizer.transform(dataFrame)
+
+print('Bucketizer output with %d buckets' % (len(bucketizer.getSplits())-1))
+bucketedData.show()
+spark.stop()
+```
+
+输出结果：
+
+```
+Bucketizer output with 4 buckets
++--------+----------------+
+|features|bucketedFeatures|
++--------+----------------+
+|  -999.9|             0.0|
+|    -0.5|             1.0|
+|    -0.3|             1.0|
+|     0.0|             2.0|
+|     0.2|             2.0|
+|   999.9|             3.0|
++--------+----------------+
+```
+
+#### 3.quantile discretizer / 按分位数离散化
+
+```python
+from pyspark.ml.feature import QuantileDiscretizer
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('QuantileDiscretizer').getOrCreate()
+
+data = [(0, 18.0), (1, 19.0), (2, 8.0), (3, 5.0), (4, 2.2), (5, 9.2), (6, 14.4)]
+df = spark.createDataFrame(data, ['id', 'hour'])
+df = df.repartition(1)  # 分位数之前要先将数据合并到一处
+
+# 分成3个桶进行离散化
+discretizer = QuantileDiscretizer(numBuckets=3, inputCol='hour', outputCol='result')
+
+result = discretizer.fit(df).transform(df)
+result.show()
+spark.stop()
+```
+
+输出结果：
+
+```
++---+----+------+
+| id|hour|result|
++---+----+------+
+|  0|18.0|   2.0|
+|  1|19.0|   2.0|
+|  2| 8.0|   1.0|
+|  3| 5.0|   0.0|
+|  4| 2.2|   0.0|
+|  5| 9.2|   1.0|
+|  6|14.4|   2.0|
++---+----+------+
+```
+
+#### 4.最大最小值幅度缩放
+
+```python
+from pyspark.ml.feature import MaxAbsScaler
+from pyspark.ml.linalg import Vectors
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('MaxAbsScalerExample').getOrCreate()
+dataFrame = spark.createDataFrame([
+    (0, Vectors.dense([1.0, 0.1, -8.0]),),
+    (1, Vectors.dense([2.0, 1.0, -4.0]),),
+    (2, Vectors.dense([4.0, 10.0, 8.0]),)
+], ['id', 'features'])
+
+scaler = MaxAbsScaler(inputCol='features', outputCol='scaledFeatures')
+
+# 计算最大最小值用于缩放
+scalerModel = scalerModel.transform(dataFrame)
+
+# 缩放幅度在[-1,1]之间
+scaledData = scalerModel.transform(dataFrame)
+scalerData.select('features', 'scaledFeatures').show()
+spark.stop()
+```
+
+输出结果：
+
+```
++--------------+----------------+
+|      features|  scaledFeatures|
++--------------+----------------+
+|[1.0,0.1,-8.0]|[0.25,0.01,-1.0]|
+|[2.0,1.0,-4.0]|  [0.5,0.1,-0.5]|
+|[4.0,10.0,8.0]|   [1.0,1.0,1.0]|
++--------------+----------------+
+```
+
+#### 5.标准化
+
+```python
+from pyspark.ml.feature import StandardScaler
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('StandardScalerExample').getOrCreate()
+dataFrame = spark.read.format('libsvm').load('data/mllib/sample_libsvm_data.txt')
+scaler = StandardScaler(
+    inputCol='features', outputCol='scaledFeatures', withStd=True, withMean=False
+)
+
+# 计算均值方差等参数
+scalerModel = scaler.fit(dataFrame)
+
+# 标准化
+scaledData = scalerModel.transform(dataFrame)
+scaledData.show()
+
+spark.stop()
+```
+
+输出结果：
+
+```
++-----+--------------------+--------------------+
+|label|            features|      scaledFeatures|
++-----+--------------------+--------------------+
+|  0.0|(692,[127,128,129...|(692,[127,128,129...|
+|  1.0|(692,[158,159,160...|(692,[158,159,160...|
+|  1.0|(692,[124,125,126...|(692,[124,125,126...|
+|  1.0|(692,[152,153,154...|(692,[152,153,154...|
+|  1.0|(692,[151,152,153...|(692,[151,152,153...|
+|  0.0|(692,[129,130,131...|(692,[129,130,131...|
+|  1.0|(692,[158,159,160...|(692,[158,159,160...|
+|  1.0|(692,[99,100,101,...|(692,[99,100,101,...|
+|  0.0|(692,[154,155,156...|(692,[154,155,156...|
+|  0.0|(692,[127,128,129...|(692,[127,128,129...|
+|  1.0|(692,[154,155,156...|(692,[154,155,156...|
+|  0.0|(692,[153,154,155...|(692,[153,154,155...|
+|  0.0|(692,[151,152,153...|(692,[151,152,153...|
+|  1.0|(692,[129,130,131...|(692,[129,130,131...|
+|  0.0|(692,[154,155,156...|(692,[154,155,156...|
+|  1.0|(692,[150,151,152...|(692,[150,151,152...|
+|  0.0|(692,[124,125,126...|(692,[124,125,126...|
+|  0.0|(692,[152,153,154...|(692,[152,153,154...|
+|  1.0|(692,[97,98,99,12...|(692,[97,98,99,12...|
+|  1.0|(692,[124,125,126...|(692,[124,125,126...|
++-----+--------------------+--------------------+
+only showing top 20 rows
+```
+
+还要一个模板
+
+```python
+from pyspark.ml.feature import StandardScaler
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('StandardScalerExample').getOrCreate()
+dataFrame = spark.createDataFrame([
+    (0, Vectors.dense([1.0, 0.1, -8.0]),),
+    (1, Vectors.dense([2.0, 1.0, -4.0]),),
+    (2, Vectors.dense([4.0, 10.0, 8.0]),)
+], ["id", "features"])
+
+# 计算均值方差等参数
+scalerModel = scaler.fit(dataFrame)
+# 标准化
+scaledData = scalerModel.tranform(dataFrame)
+scaled.show()
+spark.stop()
+```
+
+输出结果：
+
+```
++---+--------------+--------------------+
+| id|      features|      scaledFeatures|
++---+--------------+--------------------+
+|  0|[1.0,0.1,-8.0]|[0.65465367070797...|
+|  1|[2.0,1.0,-4.0]|[1.30930734141595...|
+|  2|[4.0,10.0,8.0]|[2.61861468283190...|
++---+--------------+--------------------+
+```
+
+#### 6.添加多项式特征
+
+```python
+from pyspark.ml.feature import PolynomialExpansion
+from pyspark.ml.linalg import Vectors
+from pyspark,sql import SparkSession
+
+spark = SparkSession.builder.appName('PolynomialExpansionExample').getOrCreate()
+df = spark.createDataFrame([
+    (Vectors.dense([2.0, 1.0]),),
+    (Vectors.dense([0.0, 0.0]),),
+    (Vectors.dense([3.0, -1.0]),)
+], ['features'])
+
+polyExpansion = PolynomialExpansion(degree=3, inputCol='features', outputCol='polyFeatures')
+polyDF = polyExpansion.transform(df)
+polyDF.show(truncate=False)
+spark.stop()
+```
+
+输出结果：
+
+```
++----------+------------------------------------------+
+|features  |polyFeatures                              |
++----------+------------------------------------------+
+|[2.0,1.0] |[2.0,4.0,8.0,1.0,2.0,4.0,1.0,2.0,1.0]     |
+|[0.0,0.0] |[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]     |
+|[3.0,-1.0]|[3.0,9.0,27.0,-1.0,-3.0,-9.0,1.0,3.0,-1.0]|
++----------+------------------------------------------+
+```
+
+### 对离散型特征处理
+
+#### 独热向量编码
+
+```python
+from pyspark.ml.feature import OneHotEncoder, StringIndexer
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('OneHotEncoderExample').getOrCreate()
+df = spark.createDataFrame([
+    (0, "a"),
+    (1, "b"),
+    (2, "c"),
+    (3, "a"),
+    (4, "a"),
+    (5, "c")
+], ['id', 'category'])
+stringIndexer = StringIndexer(inputCol='category', outputCol='categoryIndex')
+model = stringIndexer.fit(df)
+indexed = model.tranform(df)
+
+encoder = OneHotEncoder(inputCol='categoryIndex', outputCol='categoryVec')
+encoded = encoder.transform(indexed)
+encoder.show()
+spark.stop()
+```
+
+输出结果：
+
+```
++---+--------+-------------+-------------+
+| id|category|categoryIndex|  categoryVec|
++---+--------+-------------+-------------+
+|  0|       a|          0.0|(2,[0],[1.0])|
+|  1|       b|          2.0|    (2,[],[])|
+|  2|       c|          1.0|(2,[1],[1.0])|
+|  3|       a|          0.0|(2,[0],[1.0])|
+|  4|       a|          0.0|(2,[0],[1.0])|
+|  5|       c|          1.0|(2,[1],[1.0])|
++---+--------+-------------+-------------+
+```
+
+### 对文本型处理
+
+#### 1. 去停用词
+
+```python
+from pyspark.ml.feature import StopWordRemover
+from pyspark.sql import SparkSession
+
+spark = SparkSession.bulder.appName('StopWordRemoverExample').getOrCreate()
+
+sentenceData = spark.createDataFrame([
+    (0, ["I", "saw", "the", "red", "balloon"]),
+    (1, ["Mary", "had", "a", "little", "lamb"])
+],['id', 'ral'])
+
+remover = StopWordRemover(inputCol='raw', outputCol='filtered')
+remover.transform(sentenceData).show(truncate=False)
+spark.stop
+```
+
+输出结果：
+
+```
++---+----------------------------+--------------------+
+|id |raw                         |filtered            |
++---+----------------------------+--------------------+
+|0  |[I, saw, the, red, balloon] |[saw, red, balloon] |
+|1  |[Mary, had, a, little, lamb]|[Mary, little, lamb]|
++---+----------------------------+--------------------+
+```
+
