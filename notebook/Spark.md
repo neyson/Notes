@@ -932,3 +932,836 @@ spark.stop
 +---+----------------------------+--------------------+
 ```
 
+#### 2.Tokenizer
+
+```python
+from pyspark.ml.feature import Tokenizer, RegexTokenizer
+# A tokenizer that converts the input string to lowercase and then splits it by white spaces.
+from pyspark.sql.functions import col, udf
+from pyspark.sql.types import IntegerType
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('TokenizerExample').getOrCreate()
+sentenceDataFrame = spark.createDataFrame([
+    (0, "Hi I heard about Spark"),
+    (1, "I wish Java could use case classes"),
+    (2, "Logistic,regression,models,are,neat")
+], ['id', 'sentence'])
+tokenizer = Tokenizer(inputCol='sentence', outputCol='words')  # 将sentence转为为list类型
+# 通过正则表达式筛选
+regexTokenizer = RegexTokenizer(inputCol='sentence', outputCol='words', pattern='\\W')
+countTokens = udf(lambda words:len(words), IntegerType())  # udf 自定义函数，并定义返回类型
+
+tokenized = tokenizer.transform(sentenceDataFrame)
+tokenized.select('sentence','words').withColumn(
+    'tokens',
+    countTokens(col('words'))
+).show(truncate=False)
+
+regexTokenized = regexTokenizer.transform(sentenceDataFrame)
+regexTokenized.select('sentence','words').withColumn(
+    'tokens', countTokens(col('words'))
+).show(truncate=False)
+
+spark.stop()
+```
+
+输出结果：
+
+```
++-----------------------------------+------------------------------------------+------+
+|sentence                           |words                                     |tokens|
++-----------------------------------+------------------------------------------+------+
+|Hi I heard about Spark             |[hi, i, heard, about, spark]              |5     |
+|I wish Java could use case classes |[i, wish, java, could, use, case, classes]|7     |
+|Logistic,regression,models,are,neat|[logistic,regression,models,are,neat]     |1     |
++-----------------------------------+------------------------------------------+------+
+
++-----------------------------------+------------------------------------------+------+
+|sentence                           |words                                     |tokens|
++-----------------------------------+------------------------------------------+------+
+|Hi I heard about Spark             |[hi, i, heard, about, spark]              |5     |
+|I wish Java could use case classes |[i, wish, java, could, use, case, classes]|7     |
+|Logistic,regression,models,are,neat|[logistic, regression, models, are, neat] |5     |
++-----------------------------------+------------------------------------------+------+
+```
+
+#### 3.count vectorizer 词频 统计
+
+```python
+from pyspark.sql import SparkSession
+from pyspark.ml.feature import CountVectorizer
+
+spark = SparkSession.builder.appName('CountVectorizerExample').getOrCreate()
+
+df = spark.createDataFrame([
+    (0, "a b c".split(" ")),
+    (1, "a b b c a".split(" "))
+], ['id', 'words'])
+
+cv = CountVectorizer(inputCol='words', outputCol='features', vocabSize=3, minDF=2.0)
+model = cv.fit(df)
+result = model.transform(df)
+result.show(truncate=False)
+spark.stop()
+```
+
+输出结果：
+
+```
++---+---------------+-------------------------+
+|id |words          |features                 |
++---+---------------+-------------------------+
+|0  |[a, b, c]      |(3,[0,1,2],[1.0,1.0,1.0])|
+|1  |[a, b, b, c, a]|(3,[0,1,2],[2.0,2.0,1.0])|
++---+---------------+-------------------------+
+```
+
+#### 4.TF-IDF权重
+
+在Spark ML库中，TF-IDF被分成两部分：TF (+hashing) 和 IDF。
+
+**TF**: HashingTF 是一个Transformer，在文本处理中，接收词条的集合然后把这些集合转化成固定长度的特征向量。这个算法在哈希的同时会统计各个词条的词频。
+
+**IDF**: IDF是一个Estimator，在一个数据集上应用它的fit（）方法，产生一个IDFModel。 该IDFModel 接收特征向量（由HashingTF产生），然后计算每一个词在文档中出现的频次。IDF会减少那些在语料库中出现频率较高的词的权重。
+
+```python
+from pyspark.ml.feature import HashingTF, IDF, Tokenizer
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('TfIdfExample').getOrCreate()
+sentenceData = spark.createDataFrame([
+    (0.0, "Hi I heard about Spark"),
+    (0.0, "I wish Java could use case classes"),
+    (1.0, "Logistic regression models are neat")
+], ["label", "sentence"])
+tokenizer = Tokenizer(inputCol='sentence', outputCol='words')
+wordsData = tokenizer.transform(sentenceData)
+
+hashingTF = HashingTF(inputCol='words', outputCol='rawFeatures', numFeatures=20)
+featurizedData = hashingTF.transform(wordsData)
+
+idf = IDF(inputCol='rawFeatures', outputCol='features')
+idfModel = idf.fit(featurizedData)
+rescaledData = idfModel.transform(featurizedData)
+
+rescaledData.select('label', 'features').show()
+spark.stop()
+```
+
+输出结果：
+
+```
++-----+--------------------+
+|label|            features|
++-----+--------------------+
+|  0.0|(20,[0,5,9,17],[0...|
+|  0.0|(20,[2,7,9,13,15]...|
+|  1.0|(20,[4,6,13,15,18...|
++-----+--------------------+
+```
+
+#### 5.n-gram 语言模型
+
+```python
+from pyspark.ml.feature import NGram
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('NGramExaple').getOrCreate()
+wordDataFrame = spark.createDataFrame([
+    (0, ["Hi", "I", "heard", "about", "Spark"]),
+    (1, ["I", "wish", "Java", "could", "use", "case", "classes"]),
+    (2, ["Logistic", "regression", "models", "are", "neat"])
+], ["id", "words"])
+
+ngram = NGram(n=2, inputCol='words', outputCol='ngrams')
+
+ngramDataFrame = ngram.transform(wordDataFrame)
+ngramDataFrame.select('ngrams').show(truncate=False)
+spark.stop()
+```
+
+输出结果：
+
+```
++------------------------------------------------------------------+
+|ngrams                                                            |
++------------------------------------------------------------------+
+|[Hi I, I heard, heard about, about Spark]                         |
+|[I wish, wish Java, Java could, could use, use case, case classes]|
+|[Logistic regression, regression models, models are, are neat]    |
++------------------------------------------------------------------+
+```
+
+### 高级变换
+
+#### 1.SQL变换
+
+```python
+from pyspark.ml.feature import SQLTransformer
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('SQLTransformerExample').getOrCreate()
+df = spark.createDataFrame([
+    (0, 1.0, 3.0),
+    (2, 2,0, 5,0)
+], ['id', 'v1', 'v2'])
+
+sqlTrans = SQLTranformer(
+    statement='SELECT *, (v1+v2) AS v3, (v1*v2) AS v4 FROM __THIS__'
+)
+sqlTrans.transform(df).show()
+spark.stop()
+```
+
+输出结果：
+
+```
++---+---+---+---+----+
+| id| v1| v2| v3|  v4|
++---+---+---+---+----+
+|  0|1.0|3.0|4.0| 3.0|
+|  2|2.0|5.0|7.0|10.0|
++---+---+---+---+----+
+```
+
+#### 2. R公式变换
+
+```python
+from pyspark.ml.feature import RFormula
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('RFormulaExample').getOrCreate()
+dataset = spark.createDataFrame(
+    [(7, "US", 18, 1.0),
+     (8, "CA", 12, 0.0),
+     (9, "NZ", 15, 0.0)],
+    ["id", "country", "hour", "clicked"])
+
+formula = RFormula(
+    formula = 'clicked ~ country + hour',
+    featuresCol = 'features',
+    labelCol = 'label'
+)
+
+output = formula.fit(dataset).transform(dataset)
+output.select('features', 'label').show()
+spark.stop()
+```
+
+输出结果：
+
+```
+--------------+-----+
+|      features|label|
++--------------+-----+
+|[0.0,0.0,18.0]|  1.0|
+|[0.0,1.0,12.0]|  0.0|
+|[1.0,0.0,15.0]|  0.0|
++--------------+-----+
+```
+
+## 无监督学习
+
+#### 1. K-means
+
+```python
+from pyspark.ml.clustering import KMeans
+from pyspark.ml.evaluation import ClusteringEvaluator
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('KMeansExample').getOrCreate()
+# 读取libsvm格式的数据文件
+dataset = spark.read.format('libsvm').load('/data/mllib/sample_kmeans_data.txt')
+
+# 训练K-means聚类模型
+kmeans = KMeans().setK(2).setSeed(1)
+model = kmean.fit(dataset)
+
+# 预测（即分配聚类中心）
+predictions = model.transform(dataset)
+
+# 根据Silhouette得分评估（pyspark2.2里新加）
+evaluator = ClusteringEvaluator()
+silhouette = evaluator.evaluate(predictions)
+print('Silhouette with squared euclidean distance =' + str(sihouette))
+
+# 输出预测结果
+print('predicted Center:')
+for center in predictions[['prediction']].collect():
+    print(center.asDict())
+    
+# 聚类中心
+centers = model.clusterCenters()
+print('Cluster Centers:')
+for center in centers:
+    print(center)
+    
+spark.stop()
+```
+
+输出结果：
+
+```
+Silhouette with squared euclidean distance = 0.9997530305375207
+predicted Center: 
+{'prediction': 0}
+{'prediction': 0}
+{'prediction': 0}
+{'prediction': 1}
+{'prediction': 1}
+{'prediction': 1}
+Cluster Centers: 
+[ 0.1  0.1  0.1]
+[ 9.1  9.1  9.1]
+```
+
+#### 2.GMM模型
+
+```python
+from pyspark.ml.clustering import GaussianMixture
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('GaussianMixtureExample').getOrCreate()
+dataset = spark.read.format('libsvm').load('data/mllib/sample_kmeans_data.txt')
+
+gmm = GaussianMixture().setK(2).setSeed(0)
+model = gmm.fit(dataset)
+print('Gaussians shown as a DataFrame:')
+model.gaussiansDF.show(truncate=False)
+
+spark.stop()
+```
+
+输出结果：
+
+```
+Gaussians shown as a DataFrame: 
++-------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|mean                                                         |cov                                                                                                                                                                                                     |
++-------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|[9.099999999999984,9.099999999999984,9.099999999999984]      |0.006666666666812185  0.006666666666812185  0.006666666666812185  
+0.006666666666812185  0.006666666666812185  0.006666666666812185  
+0.006666666666812185  0.006666666666812185  0.006666666666812185  |
+|[0.10000000000001552,0.10000000000001552,0.10000000000001552]|0.006666666666806454  0.006666666666806454  0.006666666666806454  
+0.006666666666806454  0.006666666666806454  0.006666666666806454  
+0.006666666666806454  0.006666666666806454  0.006666666666806454  |
++-------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+```
+
+#### 3. 关联规则
+
+首先数据为
+
+```
+!head -5 data/mllib/sample_fpgrowth.txt
+r z h k p
+z y x w v u t s
+s x o n r
+x z y m t s q e
+z
+```
+
+pyspark2.2版本以下写法
+
+```python
+from pyspark.mllib.fpm import FPGrowth
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('FPGrowthExample').getOrCreate()
+data = spark.sparkContext.textFile('data/mllib/sample_fpgrowth.txt')
+transactions = data.map(lambda line: line.strip().split(' '))
+model = FPGrouth.train(transactions, minSupport=0.2, numPartitions=10)
+result = model.freqItemsets().collect()
+for fi in result:
+    print(fi)
+    
+spark.stop()
+```
+
+输出结果
+
+```
+FreqItemset(items=['z'], freq=5)
+FreqItemset(items=['x'], freq=4)
+FreqItemset(items=['x', 'z'], freq=3)
+......
+FreqItemset(items=['q', 'x'], freq=2)
+FreqItemset(items=['q', 'x', 'z'], freq=2)
+FreqItemset(items=['q', 'z'], freq=2)
+```
+
+pypark2.2以上写法：
+
+```python
+from pyspark.ml.fpm import FPGrowth
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('FPGrowthExample').getOrCreate()
+df = spark.createDataFrame([
+    (0,[1,2,5]),
+    (1,[1,2,3,5]),
+    (2,[1,2])
+], ['id', 'items'])
+fpGrowth = FPGrowth(itemsCol='items', minSupport=0.5, minConfidence=0.6)
+model = fpGrowth.fit(df)
+
+# Display frequent itemsets.
+model.freqItemsets.show()
+# Display generated association rules.
+model.associationRules.show()
+# transform examines the input items against all the association rules and summarize the
+# consequents as prediction
+model.transform(df).show()
+
+spark.stop()
+```
+
+output
+
+```
++---------+----+
+|    items|freq|
++---------+----+
+|      [1]|   3|
+|      [2]|   3|
+|   [2, 1]|   3|
+|      [5]|   2|
+|   [5, 2]|   2|
+|[5, 2, 1]|   2|
+|   [5, 1]|   2|
++---------+----+
+
++----------+----------+------------------+
+|antecedent|consequent|        confidence|
++----------+----------+------------------+
+|    [5, 2]|       [1]|               1.0|
+|       [2]|       [1]|               1.0|
+|       [2]|       [5]|0.6666666666666666|
+|    [2, 1]|       [5]|0.6666666666666666|
+|       [5]|       [2]|               1.0|
+|       [5]|       [1]|               1.0|
+|    [5, 1]|       [2]|               1.0|
+|       [1]|       [2]|               1.0|
+|       [1]|       [5]|0.6666666666666666|
++----------+----------+------------------+
+
++---+------------+----------+
+| id|       items|prediction|
++---+------------+----------+
+|  0|   [1, 2, 5]|        []|
+|  1|[1, 2, 3, 5]|        []|
+|  2|      [1, 2]|       [5]|
++---+------------+----------+
+```
+
+#### 4. LDA主题模型
+
+```python
+from pyspark.ml.clustring import LDA
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("LDAExample").getOrCreate()
+dataset = spark.read.format('libsvm').load("data/mllib/sample_lda_libsvm_data.txt")
+####################   数据样式   ################
+# 0 1:1 2:2 3:6 4:0 5:2 6:3 7:1 8:1 9:0 10:0 11:3
+# 1 1:1 2:3 3:0 4:1 5:3 6:0 7:0 8:2 9:0 10:0 11:1
+# 2 1:1 2:4 3:1 4:0 5:0 6:4 7:9 8:0 9:1 10:2 11:0
+# 3 1:2 2:1 3:0 4:3 5:0 6:0 7:5 8:0 9:2 10:3 11:9
+# 4 1:3 2:1 3:1 4:9 5:3 6:0 7:2 8:0 9:0 10:1 11:3
+
+# 训练LDA模型
+lda = LDA(K=10, maxIter=10)
+model = lda.fit(dataset)
+
+ll = model.logLikelihood(dataset)
+lp = model.logPerplexity(dataset)
+print('The lower bound on the log likelihood of the entire corpus: ' + str(ll))
+print('The upper bound on perplexity:' + str(lp)+'\n')
+
+# 输出主题
+topics = model.describe()Topics(3)
+print('The topics described by their top-weighted terms:')
+topics.show(truncate=False)
+
+# 数据集解析
+print('transform dataset:')
+transformed = model.transform(dataset)
+transformed.show(truncate=False)
+
+spark.stop()
+```
+
+output
+
+```
+The lower bound on the log likelihood of the entire corpus: -784.563312043982
+The upper bound on perplexity: 3.0175511876689556
+
+The topics described by their top-weighted terms:
++-----+-----------+---------------------------------------------------------------+
+|topic|termIndices|termWeights                                                    |
++-----+-----------+---------------------------------------------------------------+
+|0    |[3, 4, 10] |[0.30479149989901694, 0.12278796514250867, 0.12161706973908994]|
+|1    |[10, 5, 1] |[0.10472118214638892, 0.10407538205701086, 0.09443251272060076]|
+|2    |[0, 9, 8]  |[0.10725946461445685, 0.10401349116870545, 0.09445471149622425]|
+|3    |[5, 0, 4]  |[0.1861359631937542, 0.15982888484836216, 0.15787541409980693] |
+|4    |[6, 1, 9]  |[0.22100346160439127, 0.1886216316667507, 0.13487077710226394] |
+|5    |[0, 4, 8]  |[0.11475105421219843, 0.0938293926323442, 0.09373655278318598] |
+|6    |[10, 0, 1] |[0.09936287293318637, 0.09919070503430866, 0.09851897075744546]|
+|7    |[1, 9, 2]  |[0.1014842342649455, 0.10140920563411741, 0.09915451366273027] |
+|8    |[3, 1, 10] |[0.1106449222406801, 0.0947496161356481, 0.0936939041532816]   |
+|9    |[9, 8, 2]  |[0.10413531876664031, 0.09732819093421781, 0.09628569499072241]|
++-----+-----------+---------------------------------------------------------------+
+
+transform dataset:
+
++-----+---------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|label|features                                                       |topicDistribution                                                                                                                                                                                                     |
++-----+---------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|0.0  |(11,[0,1,2,4,5,6,7,10],[1.0,2.0,6.0,2.0,3.0,1.0,1.0,3.0])      |[0.005060343096754452,0.004779224371126995,0.004779167378819419,0.15513698910982235,0.8063483198718517,0.004779154342319572,0.004779234485359031,0.004779217257466835,0.004779171739715741,0.0047791783467639225]     |
+|1.0  |(11,[0,1,3,4,7,10],[1.0,3.0,1.0,3.0,2.0,1.0])                  |[0.2734569771626308,0.007973271153189363,0.007973145528683334,0.6624454938194773,0.008284854792904294,0.007973165379813392,0.007973326313885832,0.0079732955271774,0.00797328963040972,0.007973180691828369]          |
+|2.0  |(11,[0,1,2,5,6,8,9],[1.0,4.0,1.0,4.0,9.0,1.0,2.0])             |[0.004398208855890409,0.004154555823485665,0.004154568313800778,0.004396437855991017,0.9621234556415211,0.004154559175307323,0.004154551127869646,0.004154545212651145,0.00415455229580871,0.004154565697674274]      |
+|3.0  |(11,[0,1,3,6,8,9,10],[2.0,1.0,3.0,5.0,2.0,3.0,9.0])            |[0.6787941120549785,0.003674797670337556,0.003674809800743196,0.00388822265153777,0.29159411433883414,0.003674763199203662,0.0036748002044778632,0.003674794382671649,0.003674796622303754,0.003674789074911846]      |
+|4.0  |(11,[0,1,2,3,4,6,9,10],[3.0,1.0,1.0,9.0,3.0,2.0,1.0,3.0])      |[0.9637819545598443,0.003981248640615379,0.0039812613448832425,0.004212739273390889,0.004136452680163433,0.0039812630784879025,0.00398127114213346,0.003981273511943595,0.003981275364463161,0.003981260404074483]    |
+|5.0  |(11,[0,1,3,4,5,6,7,8,9],[4.0,2.0,3.0,4.0,5.0,1.0,1.0,1.0,4.0]) |[0.19173102233829598,0.003674781484271388,0.003674801519586637,0.7787270860519163,0.0038183220217994297,0.003674780368884357,0.003674793606388757,0.0036747881150433846,0.003674810825261795,0.0036748136685521367]   |
+|6.0  |(11,[0,1,3,6,8,9,10],[2.0,1.0,3.0,5.0,2.0,2.0,9.0])            |[0.7226473135754939,0.0038219773493048757,0.0038219878058903646,0.004043939336427409,0.24655493897624053,0.00382194611566146,0.003821979061674455,0.0038219728641123306,0.0038219781605772257,0.003821966754617474]   |
+|7.0  |(11,[0,1,2,3,4,5,6,9,10],[1.0,1.0,1.0,9.0,2.0,1.0,2.0,1.0,3.0])|[0.9604830307208936,0.004343842533119806,0.004343793372195523,0.004596876945426264,0.004513421993024098,0.004343786032703549,0.004343817897556423,0.004343778324969421,0.004343844650990688,0.004343807529120705]     |
+|8.0  |(11,[0,1,3,4,5,6,7],[4.0,4.0,3.0,4.0,2.0,1.0,3.0])             |[0.24864548138939338,0.004343817474845246,0.004343792252522897,0.7164342819986811,0.004513496682561095,0.0043438192976202284,0.004343839843285602,0.004343822376987891,0.004343844731122574,0.0043438039529800085]    |
+|9.0  |(11,[0,1,2,4,6,8,9,10],[2.0,8.0,2.0,3.0,2.0,2.0,7.0,2.0])      |[0.0034880595878568036,0.003294211880615744,0.003294229780385521,0.003485959478940128,0.9699663855889723,0.0032942157751267532,0.0032942419492447837,0.0032942492075424155,0.0032942141953274653,0.003294232555987996]|
+|10.0 |(11,[0,1,2,3,5,6,9,10],[1.0,1.0,1.0,9.0,2.0,2.0,3.0,3.0])      |[0.7988488921883795,0.004154742410116491,0.004154706134109581,0.004396690060548525,0.16767145607288966,0.0041546708289307895,0.004154713475866729,0.004154671910228219,0.004154740320060146,0.004154716598870316]     |
+|11.0 |(11,[0,1,4,5,6,7,9],[4.0,1.0,4.0,5.0,1.0,3.0,1.0])             |[0.0050591793404772,0.004778739606097657,0.004778746459172331,0.956524537983852,0.004965109153328436,0.004778750208331833,0.0047787466313080505,0.004778726294753947,0.00477872908058444,0.004778735242093942]        |
++-----+---------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+```
+
+#### 5. PCA降维
+
+```python
+from pyspark.ml.feature import PCA
+from pyspark.ml.linalg import Vectors
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("PCAExample").getOrCreate()
+# 构建一份fake data
+data = [(Vectors.sparse(5, [(1, 1.0), (3, 7.0)]),),
+        (Vectors.dense([2.0, 0.0, 3.0, 4.0, 5.0]),),
+        (Vectors.dense([4.0, 0.0, 0.0, 6.0, 7.0]),)]
+df = spark.createDataFrame(data, ['features'])
+
+# PCA降维
+pca = PCA(k=3, inputCol='features', outputCol='pcaFeatures')
+model = pca.fit(df)
+
+result = model.transform(df).select('pcaFeatures')
+model = pca.fit(df)
+
+result = model.transform(df).select('pcaFeatures')
+result.show(truncate=False)
+
+spark.stop()
+```
+
+output
+
+```
++-----------------------------------------------------------+
+|pcaFeatures                                                |
++-----------------------------------------------------------+
+|[1.6485728230883807,-4.013282700516296,-5.524543751369388] |
+|[-4.645104331781534,-1.1167972663619026,-5.524543751369387]|
+|[-6.428880535676489,-5.337951427775355,-5.524543751369389] |
++-----------------------------------------------------------+
+```
+
+#### 6. word2vec词嵌入
+
+```python
+from pyspark.ml.feature import Word2Vec
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('Word2VecExample').getOrCreate()
+
+# 输入是 bag of word形式
+documentDF = spark.createDataFrame([
+    ("Hi I heard about Spark".split(" "), ),
+    ("I wish Java could use case classes".split(" "), ),
+    ("Logistic regression models are neat".split(" "), )
+], ["text"])
+
+# 设置窗口长度等参数，词嵌入学习
+word2Vec = Word2Vec(vectorsize=3, minCount=0, inputCol='text', outputCol='result')
+model = word2Vec.fit(documentDF)
+
+# 输出词和词向量
+model.getVectors().show()
+
+result = model.transform(documentDF)
+for row in result.collect():
+    text, vector = row
+    print('Text: [%s]  => \nVector: %s\n' %(', '.join(text), str(vector)))
+spark.stop()
+```
+
+输出结果：
+
+```
++----------+--------------------+
+|      word|              vector|
++----------+--------------------+
+|     heard|[-0.1366093307733...|
+|       are|[-0.1653077900409...|
+|      neat|[0.09378280490636...|
+|   classes|[-0.1547942310571...|
+|         I|[-0.0424778945744...|
+|regression|[-0.0461251139640...|
+|  Logistic|[0.02324013225734...|
+|     Spark|[-0.0981360152363...|
+|     could|[-0.0302416980266...|
+|       use|[0.02537945471704...|
+|        Hi|[-0.0277608968317...|
+|    models|[-0.1365544795989...|
+|      case|[-0.1623256206512...|
+|     about|[0.03644379600882...|
+|      Java|[-0.1164701506495...|
+|      wish|[-0.0754781961441...|
++----------+--------------------+
+
+Text: [Hi, I, heard, about, Spark] => 
+Vector: [-0.0537080682814,0.0383701570332,0.0819620683789]
+
+Text: [I, wish, Java, could, use, case, classes] => 
+Vector: [-0.079486905198,0.0158437477159,0.0428948812187]
+
+Text: [Logistic, regression, models, are, neat] => 
+Vector: [-0.0461928892881,0.0157909940928,-0.0516870014369]
+```
+
+## 监督学习
+
+### 1. 线性回归(加L1，L2正则)
+
+```python
+from pyspark.ml.regression import LinearRegression
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('LinearRegressionWithElasticNet').getOrCreate()
+
+training = spark.read.format('libsvm').load("data/mllib/sample_linear_regression_data.txt")
+lr = LinearRegression(maxIter=10, regParam=0.3, elasticNetParam=0.8)
+
+# 拟合模型
+lrModel = lr.fit(training)
+
+# 输出系数和截距
+print('Coefficients: %s' % str(lrModel.coefficients))
+print('Intercept: %s' % str(lrModel.intercept))
+# 模型信息总结输出
+trainingSummary = lrModel.summary
+print('numIterations: %d' % trainingSummary.totlIterations)
+print('objectiveHistory: %s' % str(trainingSummary.objectiveHistory))
+trainingSummary.residuals.show()
+print('RMSE： %f' % trainingSummary.rootMeanSquaredError)
+print('r2: %f' % trainingSummary.r2)
+
+spark.stop()
+```
+
+输出结果：
+
+```
+Coefficients: [0.0,0.322925166774,-0.343854803456,1.91560170235,0.0528805868039,0.76596272046,0.0,-0.151053926692,-0.215879303609,0.220253691888]
+Intercept: 0.1598936844239736
+numIterations: 7
+objectiveHistory: [0.49999999999999994, 0.4967620357443381, 0.4936361664340463, 0.4936351537897608, 0.4936351214177871, 0.49363512062528014, 0.4936351206216114]
++--------------------+
+|           residuals|
++--------------------+
+|  -9.889232683103197|
+|  0.5533794340053554|
+|  -5.204019455758823|
+| -20.566686715507508|
+|    -9.4497405180564|
+|  -6.909112502719486|
+|  -10.00431602969873|
+|   2.062397807050484|
+|  3.1117508432954772|
+| -15.893608229419382|
+|  -5.036284254673026|
+|   6.483215876994333|
+|  12.429497299109002|
+|  -20.32003219007654|
+| -2.0049838218725005|
+| -17.867901734183793|
+|   7.646455887420495|
+| -2.2653482182417406|
+|-0.10308920436195645|
+|  -1.380034070385301|
++--------------------+
+only showing top 20 rows
+
+RMSE: 10.189077
+r2: 0.022861
+```
+
+### 2. 广义线性模型
+
+```python
+from pyspark.sql import SparkSession
+from pyspark.ml.regression import GeneralizedLinearRegression
+spark = SparkSession.builder.appName('GeneralizedLinearRegressionExample').getOrCreate()
+dataset = spark.read.format('libsvm').load("data/mllib/sample_linear_regression_data.txt")
+glr = GeneralizedLinearRegression(family='gaussian', link='identity', maxIter=10, regParam=0.3)
+# 拟合数据
+model = glr.fit(dataset)
+# 输出系数
+print("Coefficients: " + str(model.coefficients))
+print("Intercept: " + str(model.intercept))
+# 模型信息总结与输出
+summary = model.summary
+print("Coefficient Standard Errors: " + str(summary.coefficientStandardErrors))
+print("T Values: " + str(summary.tValues))
+print("P Values: " + str(summary.pValues))
+print("Dispersion: " + str(summary.dispersion))
+print("Null Deviance: " + str(summary.nullDeviance))
+print("Residual Degree Of Freedom Null: " + str(summary.residualDegreeOfFreedomNull))
+print("Deviance: " + str(summary.deviance))
+print("Residual Degree Of Freedom: " + str(summary.residualDegreeOfFreedom))
+print("AIC: " + str(summary.aic))
+print("Deviance Residuals: ")
+summary.residuals().show()
+
+spark.stop()
+```
+
+输出结果：
+
+```
+Coefficients: [0.0105418280813,0.800325310056,-0.784516554142,2.36798871714,0.501000208986,1.12223511598,-0.292682439862,-0.498371743232,-0.603579718068,0.672555006719]
+Intercept: 0.14592176145232041
+Coefficient Standard Errors: [0.7950428434287478, 0.8049713176546897, 0.7975916824772489, 0.8312649247659919, 0.7945436200517938, 0.8118992572197593, 0.7919506385542777, 0.7973378214726764, 0.8300714999626418, 0.7771333489686802, 0.463930109648428]
+T Values: [0.013259446542269243, 0.9942283563442594, -0.9836067393599172, 2.848657084633759, 0.6305509179635714, 1.382234441029355, -0.3695715687490668, -0.6250446546128238, -0.7271418403049983, 0.8654306337661122, 0.31453393176593286]
+P Values: [0.989426199114056, 0.32060241580811044, 0.3257943227369877, 0.004575078538306521, 0.5286281628105467, 0.16752945248679119, 0.7118614002322872, 0.5322327097421431, 0.467486325282384, 0.3872259825794293, 0.753249430501097]
+Dispersion: 105.60988356821714
+Null Deviance: 53229.3654338832
+Residual Degree Of Freedom Null: 500
+Deviance: 51748.8429484264
+Residual Degree Of Freedom: 490
+AIC: 3769.1895871765314
+Deviance Residuals: 
++-------------------+
+|  devianceResiduals|
++-------------------+
+|-10.974359174246889|
+| 0.8872320138420559|
+| -4.596541837478908|
+|-20.411667435019638|
+|-10.270419345342642|
+|-6.0156058956799905|
+|-10.663939415849267|
+| 2.1153960525024713|
+| 3.9807132379137675|
+|-17.225218272069533|
+| -4.611647633532147|
+| 6.4176669407698546|
+| 11.407137945300537|
+| -20.70176540467664|
+| -2.683748540510967|
+|-16.755494794232536|
+|  8.154668342638725|
+|-1.4355057987358848|
+|-0.6435058688185704|
+|  -1.13802589316832|
++-------------------+
+only showing top 20 rows
+```
+
+### 3. 逻辑回归
+
+```python
+from pyspark.ml.classification import LogisticRegression
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('LogisticRegressionSummary').getOrCreate()
+# 加载数据
+training = spark.read.format('libsvm').load("data/mllib/sample_libsvm_data.txt")
+
+lr = LogisticRegression(maxIter=10, regParam=0.3, elasticNetParam=0.8)
+# 拟合模型
+lrModel = lr.fit(training)
+# 模型信息总结和输出
+trainingSummary = lrModel.summary
+# 输出每一轮的损失函数值
+objectiveHistory = trainingSummary.objectiveHistory
+print('objectiveHistory:')
+for objective in objectiveHistory:
+    print(objective)
+# ROC曲线
+trainingSummary.roc.show()
+print('areaUnderRoc:' + str(trainingSummary.areaUnderROC))
+
+spark.stop()
+```
+
+输出结果：
+
+```
+objectiveHistory:
+0.6833149135741672
+0.6662875751473734
+0.6217068546034618
+0.6127265245887887
+0.6060347986802873
+0.6031750687571562
+0.5969621534836274
+0.5940743031983118
+0.5906089243339022
+0.5894724576491042
+0.5882187775729587
++---+--------------------+
+|FPR|                 TPR|
++---+--------------------+
+|0.0|                 0.0|
+|0.0|0.017543859649122806|
+|0.0| 0.03508771929824561|
+|0.0| 0.05263157894736842|
+|0.0| 0.07017543859649122|
+|0.0| 0.08771929824561403|
+|0.0| 0.10526315789473684|
+|0.0| 0.12280701754385964|
+|0.0| 0.14035087719298245|
+|0.0| 0.15789473684210525|
+|0.0| 0.17543859649122806|
+|0.0| 0.19298245614035087|
+|0.0| 0.21052631578947367|
+|0.0| 0.22807017543859648|
+|0.0| 0.24561403508771928|
+|0.0|  0.2631578947368421|
+|0.0|  0.2807017543859649|
+|0.0|  0.2982456140350877|
+|0.0|  0.3157894736842105|
+|0.0|  0.3333333333333333|
++---+--------------------+
+only showing top 20 rows
+
+areaUnderROC: 1.0
+```
+
+例2 多项式逻辑回归
+
+```python
+from pyspark.ml.classification import LogisticRegression
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('LogisticRegressionSummary').getOrCreate()
+# 加载数据
+training = spark.read.format('libsvm').load("data/mllib/sample_libsvm_data.txt")
+# 多项式逻辑回归
+mlr = LogisticRegression(maxIter=10, regParam=0.3, elasticNetParam=0.8, family='multinomial')
+# 拟合模型
+mlrModel = mlr.fit(training)
+# 输出系数
+print('Multinomial coefficients:'+ str(mlrModel.coefficientMatrix))
+print('Multinomial intercepts:' + str(mlrModel.interceptVector))
+
+spark.stop()
+```
+
+### 4. 多分类逻辑回归
+
