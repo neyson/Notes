@@ -2084,3 +2084,352 @@ Test Error = 0
 RandomForestClassificationModel (uid=RandomForestClassifier_4898af52d4f2b8ffa5a1) with 10 trees
 ```
 
+### 9. 随机森林回归
+
+```python
+from pyspark.ml import Pipeline
+from pyspark.ml.regression import RandomForestRegressor
+from pyspark.ml.feature import VectorIndexer
+from pyspark.ml.evaluator import RegressionEvaluator
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName('RandomForestRegressorExample').getOrCreate()
+data = spark.read.format('libsvm').load('data/mllib/smaple_libsvm_data.txt')
+# Automatically identify categorical features, and index them
+# Set maxCategoris so features with > 4 distinct values are treated as continuous.
+featureIndexer = VectorIndexer(inputCol='features', outputCol='indexedFeatures',
+                              maxCategories=4).fit(data)
+# Split the data into training and test sets(30% held out for testing)
+(trainingData, testData) = data.randomSplit([0.7, 0.3])
+# Train a RandomForest model
+rf = RandomForestRegressor(featuresCol='indexedFeatures')
+# Chain indexer and forest in a Pipeline
+pipeline = Pipeline(stages=[featureIndexer, rf])
+# Train model. This also runs the indexer
+model = pipline.fit(trainingData)
+# Make predictions
+predictions = model.transform(testData)
+# Select example rows to display.
+predictions.select('prediction', 'label', 'features').show(5)
+# Select (prediction, true label) and compute test error
+evaluator = RegressionEvaluator(labelCol='label', predictionCol='prediction',metricName='rmse')
+rmse = evaluator.evaluate(predictions)
+print('Root Mean Squared Error (RMSE) on test data = %g' % rmse)
+rfModel = model.stages[1]
+print(rfModel)
+spark.stop()
+```
+
+输出结果：
+
+```
++----------+-----+--------------------+
+|prediction|label|            features|
++----------+-----+--------------------+
+|       0.0|  0.0|(692,[122,123,124...|
+|      0.05|  0.0|(692,[122,123,148...|
+|       0.0|  0.0|(692,[123,124,125...|
+|      0.05|  0.0|(692,[124,125,126...|
+|       0.1|  0.0|(692,[126,127,128...|
++----------+-----+--------------------+
+only showing top 5 rows
+
+Root Mean Squared Error (RMSE) on test data = 0.0476731
+RandomForestRegressionModel (uid=RandomForestRegressor_415da16454272956c4e1) with 20 trees
+```
+
+### 10. 梯度增强树分类
+
+```python
+from pyspark.ml import Pipeline
+from pyspark.ml.classification import GBTClassifier
+from pyspark.ml.features import StringIndexer, VectorIndexer
+from pyspark.ml.evaluation import MuticlassClassificationEvaluator
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('GradientBoostedTreeClassifierExample').getOrCreate()
+data = spark.read.format('libsvm').load("data/mllib/sample_libsvm_data.txt")
+# Index labels, adding metadata to the label column.
+# Fit on whole dataset to include all labels in index.
+labelIndexer = StringIndexer(inputCol='label', outputCol='indexedLabel').fit(data)
+# Automatically identify categorical features, and index them.
+# Set maxCategories so features with > 4 distinct values are treated as continuous
+featureIndex = VectorIndexer(inputCol='features', outputCol='indexedFeatures',
+                            maxCategories=4).fit(data)
+# Split the data into training and test sets(30% held out for testing)
+(trainingData, testData) = data.randomSplit([0.7, 0.3])
+# Train a GBT model.
+gbt = GBTClassifier(labelCol='indexedLabel', featuresCol='indexedFeatures', maxIter=10)
+# Chain indexers and GBT in a Pipeline
+pipeline = Pipeline(stages=[labelIndexer, featureIndexer, gbt])
+# Train model. This also runs the indexers.
+model = pipeline.fit(trainingData)
+# Make predictions
+predictions = model.transform(testData)
+# Select example rows to display.
+predictions.select('prediction', 'indexedLabel', 'features').show(5)
+# Select (prediction, true label) and compute test error
+evaluator = MuticlassClassificationEvaluator(labelCol='indexedLabel', predictionCol='prediction',
+                                            metricName='accuracy')
+accuracy = evaluator.evaluate(predictions)
+print('Test Error = %g' %(1.0 - accuracy))
+
+gbtModel = model.stages[2]
+print(gbtModel)
+spark.stop()
+```
+
+输出结果：
+
+```
++----------+------------+--------------------+
+|prediction|indexedLabel|            features|
++----------+------------+--------------------+
+|       1.0|         1.0|(692,[122,123,124...|
+|       1.0|         1.0|(692,[123,124,125...|
+|       1.0|         1.0|(692,[124,125,126...|
+|       1.0|         1.0|(692,[126,127,128...|
+|       1.0|         1.0|(692,[126,127,128...|
++----------+------------+--------------------+
+only showing top 5 rows
+
+Test Error = 0
+GBTClassificationModel (uid=GBTClassifier_4f1ea7fd012a2a8cb210) with 10 trees
+```
+
+### 11. 梯度增强树回归
+
+```python
+from pyspark.ml import Pipeline
+from pyspark.ml.regression import GBTRegressor
+from pyspark.ml.feature import VectorIndexer
+from pyspark.ml.evaluation import RegressionEvaluator
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('GradientBoostedTreeRegressorExample').getOrCreate()
+data = spark.read.format('libsvm').load("data/mllib/sample_libsvm_data.txt")
+# Automatically identify categorical features, and index them.
+# Set maxCategories so features with > 4 distinct values are treated as continuous
+featureIndexer = VectorIndexer(inputCol='feature', outputCol='indexedFeatures',
+                              maxCategories=4).fit(data)
+# Split the data into training and test set(30% held out for testing)
+(trainingData, testData) = data.randomSplit([0.7, 0.3])
+# Train a GBT model.
+gbt = GBTRegressor(featuresCol='indexedFeatures', maxIter=10)
+# Chain indexer and GBT in a Pipeline
+pipeline = Pipeline(stages=[featureIndexer, gbt])
+# train model. This also runs the indexer.
+model = pipeline.fit(trainingData)
+# Make predictons
+predictions = model.transform(testData)
+# Select (prediction, true label) and compute test error
+evaluator = RegressionEvaluator(labelCol='label', predictionCol='prediction', metricName='rmse')
+rmse = evaluator.evaluate(predictions)
+print('Root Mean Squared Error (RMSE) on test data = %g' % rmse)
+gbtModel = model.stages[1]
+print(gbtModel)
+spark.stop()
+```
+
+输出结果：
+
+```
++----------+-----+--------------------+
+|prediction|label|            features|
++----------+-----+--------------------+
+|       0.0|  0.0|(692,[95,96,97,12...|
+|       0.0|  0.0|(692,[123,124,125...|
+|       0.0|  0.0|(692,[124,125,126...|
+|       0.0|  0.0|(692,[126,127,128...|
+|       0.0|  0.0|(692,[126,127,128...|
++----------+-----+--------------------+
+only showing top 5 rows
+
+Root Mean Squared Error (RMSE) on test data = 0
+GBTRegressionModel (uid=GBTRegressor_4c619579bb80862efe6c) with 10 trees
+```
+
+### 12. 机器学习模板与交叉 验证
+
+```python
+from pyspark.ml import Pipeline
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
+from pyspark.ml.feature import HashingTF, Tokenizer
+from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('CrossValidatorExample').getOrCreate()
+# $example on$
+# Prepare training documents, which are labeled.
+training = spark.createDataFrame([
+    (0, "a b c d e spark", 1.0),
+    (1, "b d", 0.0),
+    (2, "spark f g h", 1.0),
+    (3, "hadoop mapreduce", 0.0),
+    (4, "b spark who", 1.0),
+    (5, "g d a y", 0.0),
+    (6, "spark fly", 1.0),
+    (7, "was mapreduce", 0.0),
+    (8, "e spark program", 1.0),
+    (9, "a e c l", 0.0),
+    (10, "spark compile", 1.0),
+    (11, "hadoop software", 0.0)
+], ['id', 'text', 'label'])
+# Configure an Ml pipeline, which consists of tree stages: tokenizer, hashingTF, and lr.
+tokenizer = Tokenizer(inputCol='text', outputCol='words')
+hashingTF = HashingTF(inputCol=tokenizer.getOutputCol(), outputCol='features')
+lr = LogisticRegression(maxIter=10)
+pipeline = Pipeline(stages=[tokenizer, hashingTF, lr])
+# We now treat the pipeline as an Estimator, wrapping it in a CrossValidator instance.
+# This will allow us to jointly choose parameters for all pipeline stages.
+# A CrossValidator requires an Estimator, a set of Estimator ParamMaps, and an Evaluator.
+# We use a ParamGridBuilder to construct a grid of parameters to search over.
+# With 3 values for hashingTF.numFeatures and 2 values for lr.regParam.
+# this grid will have 3x2=6 parameter settings for CrossValidator to choose from.
+paramGrid = ParamGridBuilder().addGrid(hashingTF.numFeatures, 
+                                       [10, 100, 1000]).addGrid(lr.regParam, [0.1, 0.01]).build()
+crossval = CrossValidator(estimator=pipeline,
+                         estimatorParamMaps=paramGrid,
+                         evaluator=BinaryClassificationEvaluator(),
+                         numFolds=2)  # use 3+ folds in practice
+# Run cross-validation, and choose the best set of parameters
+cvModel = crossval.fit(training)
+# Prepare test documents, which are unlabeled
+test = spark.createDataFrame([
+    (4, "spark i j k"),
+    (5, "l m n"),
+    (6, "mapreduce spark"),
+    (7, "apache hadoop")
+], ['id', 'text'])
+# Make predictions on test documents. cvModel uses the best model found(lrModel)
+prediction = cvModel.transform(test)
+selected = prediction.select('id', 'text', 'probability', 'prediction')
+for row in selected.collect():
+    print(row)
+spark.stop()
+```
+
+输出结果：
+
+```
+Row(id=4, text='spark i j k', probability=DenseVector([0.2581, 0.7419]), prediction=1.0)
+Row(id=5, text='l m n', probability=DenseVector([0.9186, 0.0814]), prediction=0.0)
+Row(id=6, text='mapreduce spark', probability=DenseVector([0.432, 0.568]), prediction=1.0)
+Row(id=7, text='apache hadoop', probability=DenseVector([0.6766, 0.3234]), prediction=0.0)
+```
+
+## 实例1： 文本分类
+
+### 1. 加载数据
+
+本例通过命令从网上下载数据
+
+`! wget https://kdd.ics.uci.edu/databases/20newsgroups/mini_newsgroups.tar.gz`
+
+```
+--2018-06-01 03:12:47--  https://kdd.ics.uci.edu/databases/20newsgroups/mini_newsgroups.tar.gz
+Resolving kdd.ics.uci.edu (kdd.ics.uci.edu)... 128.195.1.86
+Connecting to kdd.ics.uci.edu (kdd.ics.uci.edu)|128.195.1.86|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 1860687 (1.8M) [application/x-gzip]
+Saving to: ‘mini_newsgroups.tar.gz.1’
+
+mini_newsgroups.tar 100%[=====================>]   1.77M  1.89MB/s   in 0.9s   
+
+2018-06-01 03:12:49 (1.89 MB/s) - ‘mini_newsgroups.tar.gz.1’ saved [1860687/1860687]
+```
+
+然后解压缩
+
+`! tar -xvzf mini_newsgroups.tar.gz`
+
+```
+mini_newsgroups/alt.atheism/
+mini_newsgroups/alt.atheism/51127
+mini_newsgroups/alt.atheism/51310
+mini_newsgroups/alt.atheism/53539
+mini_newsgroups/alt.atheism/53336
+mini_newsgroups/alt.atheism/53212
+......
+```
+
+目录中数字代表具体的新闻，而所在文件夹名称作为label
+
+### 2. 配置环境
+
+```python
+from pyspark.sql import SparkSession
+spark = SparkSession\
+    .builder\
+    .appName("TextClassifier")\
+    .getOrCreate()
+```
+
+### 3. 加载数据
+
+```python
+path='mini_newsgroups/*'
+newsGroupRowData = spark.sparkContext.wholeTextFiles(path)
+print('总共的文本文档数为：', newsGroupRowData.count())
+# 总共的文本文档数为: 2000
+```
+
+看一眼数据
+
+`newsGroupRowData.takeSample(False,1,10)`
+
+```
+[('file:/home/ds/notebooks/spark-ml/machine_learning_templates/mini_newsgroups/sci.electronics/53641',
+  "Path: cantaloupe.srv.cs.cmu.edu!crabapple.srv.cs.cmu.edu!bb3.andrew.cmu.edu!news.sei.cmu.edu!cis.ohio
+  .......
+  20915-1433\n")]
+```
+
+```python
+filepaths = newsGroupRowData.map(lambda x:x[0])  # 抽取所有文件目录
+text = nesGroupRowData.map(lambda x:x[1])  # 抽取所有文件
+id = filepaths.map(lambda filepath : filepath.split('/')[-1])  # 抽取所有文件名
+topics = filepaths.map(lambda filepath: filepath.split("/")[-2])  # 抽取所有文档的上一级目录名称
+
+# 筛选用于训练的数据字段
+from pyspark.sql.types import *
+
+# The schema is encoded in a string.
+schemaString = 'id text topic'
+fields = [StructField(field_name, StringType(), True) for field_name in schemaString.split()]
+schema = StructType(fields)
+
+# Apply the schema to the RDD.
+newsgroups = newsGroupRowData.map(lambda x: (x[0].split('/')[-1], x[1], x[0].split('/')[-2]))
+df = spark.createDataFrame(newsgroups, schema)
+df.printSchema()
+
+# Create a temporary view using the DataFrame
+df.createOrReplaceTempView('newsgroups')
+
+# SQL can be run over DataFrames that have been registered as a table
+results = spark.sql('SELECT id, topic, text FROM newsgroups limit 5')
+results.show()
+```
+
+输出结果：
+
+```
+root
+ |-- id: string (nullable = true)
+ |-- text: string (nullable = true)
+ |-- topic: string (nullable = true)
+
++-----+-----------+--------------------+
+|   id|      topic|                text|
++-----+-----------+--------------------+
+|51121|alt.atheism|Xref: cantaloupe....|
+|51126|alt.atheism|Path: cantaloupe....|
+|51127|alt.atheism|Path: cantaloupe....|
+|51131|alt.atheism|Path: cantaloupe....|
+|51139|alt.atheism|Path: cantaloupe....|
++-----+-----------+--------------------+
+```
+
+```
+
+```
+
