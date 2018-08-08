@@ -1765,3 +1765,322 @@ spark.stop()
 
 ### 4. 多分类逻辑回归
 
+```python
+from __future__ import print_function
+from pyspark.ml.classification import LogisticRegression
+from pyspark.sql import SparkSession
+
+spark = SparkSession \
+    .builder \
+    .appName("MulticlassLogisticRegressionWithElasticNet") \
+    .getOrCreate()
+
+# 加载数据
+training = spark \
+    .read \
+    .format("libsvm") \
+    .load("data/mllib/sample_multiclass_classification_data.txt")
+
+lr = LogisticRegression(maxIter=10, regParam=0.3, elasticNetParam=0.8)
+
+# 拟合模型
+lrModel = lr.fit(training)
+
+# 输出系数
+print("Coefficients: \n" + str(lrModel.coefficientMatrix))
+print("Intercept: " + str(lrModel.interceptVector))
+
+# 预测结果
+lrModel.transform(training).show()
+
+spark.stop()
+```
+
+输出结果：
+
+```
+Coefficients: 
+3 X 4 CSRMatrix
+(0,3) 0.3176
+(1,2) -0.7804
+(1,3) -0.377
+Intercept: [0.0516523165983,-0.123912249909,0.0722599333102]
++-----+--------------------+--------------------+--------------------+----------+
+|label|            features|       rawPrediction|         probability|prediction|
++-----+--------------------+--------------------+--------------------+----------+
+|  1.0|(4,[0,1,2,3],[-0....|[-0.2130545101220...|[0.19824091021950...|       1.0|
+|  1.0|(4,[0,1,2,3],[-0....|[-0.2395254151479...|[0.18250386256254...|       1.0|
+|  1.0|(4,[0,1,2,3],[-0....|[-0.2130545101220...|[0.18980556250236...|       1.0|
+|  1.0|(4,[0,1,2,3],[-0....|[-0.2395254151479...|[0.19632523546632...|       1.0|
+|  0.0|(4,[0,1,2,3],[0.1...|[0.21047647616023...|[0.43750398183438...|       0.0|
+|  1.0|(4,[0,2,3],[-0.83...|[-0.2395254151479...|[0.18250386256254...|       1.0|
+|  2.0|(4,[0,1,2,3],[-1....|[0.07812299927036...|[0.37581775428218...|       0.0|
+|  2.0|(4,[0,1,2,3],[-1....|[0.05165230377890...|[0.35102739153795...|       2.0|
+|  1.0|(4,[0,1,2,3],[-0....|[-0.2659960025254...|[0.17808226409449...|       1.0|
+|  0.0|(4,[0,2,3],[0.611...|[0.18400588878268...|[0.44258017540583...|       0.0|
+|  0.0|(4,[0,1,2,3],[0.2...|[0.23694706353777...|[0.44442301486604...|       0.0|
+|  1.0|(4,[0,1,2,3],[-0....|[-0.2659960025254...|[0.17539206930356...|       1.0|
+|  1.0|(4,[0,1,2,3],[-0....|[-0.2395254151479...|[0.18250386256254...|       1.0|
+|  2.0|(4,[0,1,2,3],[-0....|[0.05165230377890...|[0.35371124645092...|       2.0|
+|  2.0|(4,[0,1,2,3],[-0....|[-0.0277597631826...|[0.32360705108265...|       2.0|
+|  2.0|(4,[0,1,2,3],[-0....|[0.02518163392628...|[0.33909561029444...|       2.0|
+|  1.0|(4,[0,2,3],[-0.94...|[-0.2395254151479...|[0.17976563656243...|       1.0|
+|  2.0|(4,[0,1,2,3],[-0....|[-0.0012891758050...|[0.32994371314262...|       2.0|
+|  0.0|(4,[0,1,2,3],[0.1...|[0.10459380900173...|[0.39691355784123...|       0.0|
+|  2.0|(4,[0,1,2,3],[-0....|[0.02518163392628...|[0.34718685710751...|       2.0|
++-----+--------------------+--------------------+--------------------+----------+
+only showing top 20 rows
+```
+
+### 5. 多层感知机（MLP）
+
+```python
+from pyspark.ml.classification import MultilayerPerceptronClassifier
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+from pyspark.sql import SparkSession
+
+spark = SparkSession\
+    .builder.appName("multilayer_perceptron_classification_example").getOrCreate()
+
+# 加载数据
+data = spark.read.format("libsvm")\
+    .load("data/mllib/sample_multiclass_classification_data.txt")
+
+# 切分训练集和测试集
+splits = data.randomSplit([0.6, 0.4], 1234)
+train = splits[0]
+test = splits[1]
+
+# 输入、隐层、隐层、输出个数
+layers = [4, 5, 4, 3]
+
+# 创建多层感知器
+trainer = MultilayerPerceptronClassifier(maxIter=100, layers=layers, blockSize=128, seed=1234)
+
+# 训练模型
+model = trainer.fit(train)
+
+# 预测和计算准确度
+result = model.transform(test)
+result.show()
+predictionAndLabels = result.select("prediction", "label")
+evaluator = MulticlassClassificationEvaluator(metricName="accuracy")
+print("Test set accuracy = " + str(evaluator.evaluate(predictionAndLabels)))
+
+spark.stop()
+```
+
+输出结果：
+
+```
++-----+--------------------+--------------------+--------------------+----------+
+|label|            features|       rawPrediction|         probability|prediction|
++-----+--------------------+--------------------+--------------------+----------+
+|  0.0|(4,[0,1,2,3],[-0....|[-29.588369001638...|[2.63020383878084...|       2.0|
+|  0.0|(4,[0,1,2,3],[-0....|[125.657894478296...|[1.0,1.4484875476...|       0.0|
+|  0.0|(4,[0,1,2,3],[-0....|[126.190155254739...|[1.0,5.1578089761...|       0.0|
+|  0.0|(4,[0,1,2,3],[-0....|[-26.984478255346...|[4.23003198458660...|       2.0|
+|  0.0|(4,[0,1,2,3],[-0....|[-29.588369001638...|[2.63020383878084...|       2.0|
+|  0.0|(4,[0,1,2,3],[-1....|[-29.588368732563...|[2.63020459374897...|       2.0|
+|  0.0|(4,[0,1,2,3],[0.1...|[126.190175711705...|[1.0,5.1572549882...|       0.0|
+|  0.0|(4,[0,1,2,3],[0.2...|[126.190175994586...|[1.0,5.1572473280...|       0.0|
+|  0.0|(4,[0,1,2,3],[0.3...|[126.190175994586...|[1.0,5.1572473280...|       0.0|
+|  0.0|(4,[0,1,2,3],[0.3...|[126.190175994586...|[1.0,5.1572473280...|       0.0|
+|  0.0|(4,[0,1,2,3],[0.3...|[126.190175994586...|[1.0,5.1572473280...|       0.0|
+|  0.0|(4,[0,1,2,3],[0.4...|[126.190175994586...|[1.0,5.1572473280...|       0.0|
+|  0.0|(4,[0,1,2,3],[0.5...|[126.190175994586...|[1.0,5.1572473280...|       0.0|
+|  0.0|(4,[0,1,2,3],[0.7...|[126.190175994586...|[1.0,5.1572473280...|       0.0|
+|  0.0|(4,[0,1,2,3],[0.8...|[126.190175994586...|[1.0,5.1572473280...|       0.0|
+|  0.0|(4,[0,1,2,3],[1.0...|[126.190175994592...|[1.0,5.1572473278...|       0.0|
+|  0.0|(4,[0,2,3],[0.166...|[126.190175994583...|[1.0,5.1572473280...|       0.0|
+|  0.0|(4,[0,2,3],[0.388...|[126.190175994586...|[1.0,5.1572473280...|       0.0|
+|  1.0|(4,[0,1,2,3],[-0....|[-122.71364090590...|[1.47439846164393...|       1.0|
+|  1.0|(4,[0,1,2,3],[-0....|[-122.71364090590...|[1.47439846164393...|       1.0|
++-----+--------------------+--------------------+--------------------+----------+
+only showing top 20 rows
+
+Test set accuracy = 0.9019607843137255
+```
+
+### 6. 决策树分类
+
+```python
+from pyspark.ml import Pipeline
+from pyspark.ml.classification import DecisionTreeClassifier
+from pyspark.ml.feature import StringIndexer, VectorIndexer
+from pyspark.ml.evaluation import MuticlassClassificationEvaluator
+from pyspark.sql import SparkSession
+# 加载数据
+spark = SparkSession.builder.appName('DecisionTreeClassificationExample').getOrCreate()
+# Index labels, adding metadata to the label column.
+# Fit on whole dataset to include all labels in dex.
+labelIndexer = StringIndexer(inputCol='label', outputCol='indexedLabel').fit(data)
+# Automatically identify categorical features, and index them.
+# We specify maxCategories so features with >4 distinct values are treated as conntinuous.
+featureIndexer = VectorIndexer(
+    inputCol='features', outputCol='indexedFeatures', maxCategories=4
+).fit(data)
+
+# Split the data into training and test sets(30% held out for testing)
+(trainingData, testData) = data.randomSplit([0.7, 0.3])
+
+# Train a DecisionTree model.
+dt = DecisionTreeClassifier(labelCol='indexedLabel', featuresCol='indexedFeatures')
+
+# Chain indexers and tree in a Pipeline
+pipeline = Pipeline(stages=[labelIndexer, featureIndexer, dt])
+
+# Train model. This also runs the indexers.
+model = pipeline.fit(trainingData)
+# Make predictions
+predictions = model.transform(testData)
+# Select example rows to display
+predictions.select('prediction', 'indexedLabel', 'features').show(5)
+# Select (prediction, true label) and compute test error
+evaluator = MuticlassClassificationEvaluator(
+    labelCol='indexedLabel', predictionCol='prediction', metricName='accuracy'
+)
+accuracy = evaluator.evaluate(predictions)
+print('Test Error = %g' %(1.0 - accuracy))
+
+treeModel = model.stages[2]
+print(treeModel)
+spark.stop()
+```
+
+输出结果：
+
+```
++----------+------------+--------------------+
+|prediction|indexedLabel|            features|
++----------+------------+--------------------+
+|       1.0|         1.0|(692,[122,123,148...|
+|       1.0|         1.0|(692,[123,124,125...|
+|       1.0|         1.0|(692,[124,125,126...|
+|       1.0|         1.0|(692,[124,125,126...|
+|       1.0|         1.0|(692,[124,125,126...|
++----------+------------+--------------------+
+only showing top 5 rows
+
+Test Error = 0.0645161 
+DecisionTreeClassificationModel (uid=DecisionTreeClassifier_45c8b0785204663bc220) of depth 1 with 3 nodes
+```
+
+### 7. 决策树回归
+
+```python
+from pyspark.ml import Pipeline
+from pyspark.ml.regression import DecisionTreeRegressor
+from pyspark.ml.feature import VectorIndexer
+from pyspark.ml.evaluation import RegressionEvaluator
+from pyspark.sql import SparkSession
+
+spark = SparkSession.build.appName('DecisionTreeRegressionExample').getOrCreate()
+# 加载数据
+data = spark.read.format('libsvm').load('data/mllib/sample_libsvm_data.txt')
+
+# Automatically identify categorical features, and index them.
+# We specify maxCategories so features with > 4 distinct values are treated as continuous.
+featureIndex = VectorIndexer(
+    inputCol='features', outputCol='indexedFeatures', maxCategories=4
+).fit(data)
+# Split the data into training and test sets(30% held out for testing)
+(trainingData, testData) = data.randomSplit([0.7, 0.3])
+# Train a DecisionTree model.
+dt = DecisionTreeRegressor(featuresCol='indexedFeatures')
+# Chain indexer and tree in a Pipeline
+pipeline = Pipeline(stages=[featureIndexer, dt])
+# train model. This also runs the indexer.
+model = pipeline.fit(trainingData)
+# Make predictions.
+predictions = model.transform(testData)
+# Select example rows to display.
+predictions.select('prediction', 'label','features').show(5)
+# Select (prediction, true label) and compute test error
+evaluator = RegressionEvalueator(
+    labelCol='label', predictionCol='prediction', metricName='rmse'
+)
+rmse = evaluator.evaluate(predictions)
+print('Root Mean Squared Error(RMSE) on test data = %g' % rmse)
+treeModel = model.stages[1]
+# summary only
+print(treeModel)
+spark.stop()
+```
+
+输出结果：
+
+```
++----------+-----+--------------------+
+|prediction|label|            features|
++----------+-----+--------------------+
+|       0.0|  0.0|(692,[123,124,125...|
+|       0.0|  0.0|(692,[124,125,126...|
+|       0.0|  0.0|(692,[124,125,126...|
+|       0.0|  0.0|(692,[124,125,126...|
+|       0.0|  0.0|(692,[124,125,126...|
++----------+-----+--------------------+
+only showing top 5 rows
+
+Root Mean Squared Error (RMSE) on test data = 0
+DecisionTreeRegressionModel (uid=DecisionTreeRegressor_43d2879b529c44bdb452) of depth 2 with 5 nodes
+```
+
+### 8. 随机森林分类
+
+```python
+from pyspark.ml import Pipeline
+from pyspark.ml.classificaion import RandomForestClassifier
+from pyspark.ml.feature import IndexToString, StringIndexer, VectorIndexer
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName('RandomForestClassifierExample').getOrCreate()
+data = spark.read.format('libsvm').load('data/mllib/sample_libsvm_data.txt')
+# Index labels, adding meetadata to the label Colmun.
+# Fit on whole dataset to include all labels in index.
+labelIndexer = StringIndexer(inputCol='label', outputCol='indexedlabel').fit(data)
+# Split the data into training and test sets(30% held out for testing)
+(trainingData, testData) = data.randomSplit([0.7, 0.3])
+# Train a RandomForest model.
+rf = RandomForestClassifier(labelCol='indexedLabel', featuresCol='indexedFeatures', numTrees=10)
+# Convert indexed labels back to original labels.
+labelConverter = IndexToString(inputCol='prediction', outputCol='predictedLabel',
+                              labels=labelIndexer.labels)
+# Chain indexers and forest in a Pipeline
+pipeline = Pipeline(stages=[labelIndexer, featureIndexer, rf, labelConverter])
+# train model. This also runs the indexers.
+model = pipeline.fit(trainingData)
+# Make predictions.
+predictions = model.transform(testData)
+# Select example rows to display
+predictions.select('predictedLabel', 'label', 'features').show(5)
+# Select (prediction, true label) and compute test error
+evaluator = MulticlassClassificationEvaluator(labelCol='indexedLabel', predictionCol='prediction',
+                                             metricName='accuracy')
+accuracy = evaluator.evaluate(predictions)
+print('Test Error = %g' %(1.0 - accuracy))
+rfModel = model.stages[2]
+print(rfModel)
+spark.stop()
+```
+
+输出结果：
+
+```
+
+
++--------------+-----+--------------------+
+|predictedLabel|label|            features|
++--------------+-----+--------------------+
+|           0.0|  0.0|(692,[98,99,100,1...|
+|           0.0|  0.0|(692,[126,127,128...|
+|           0.0|  0.0|(692,[126,127,128...|
+|           0.0|  0.0|(692,[126,127,128...|
+|           0.0|  0.0|(692,[126,127,128...|
++--------------+-----+--------------------+
+only showing top 5 rows
+
+Test Error = 0
+RandomForestClassificationModel (uid=RandomForestClassifier_4898af52d4f2b8ffa5a1) with 10 trees
+```
+
