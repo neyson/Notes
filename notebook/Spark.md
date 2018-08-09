@@ -2429,7 +2429,377 @@ root
 +-----+-----------+--------------------+
 ```
 
+```python
+result_list = df[df.topic.like('comp%')].collect()
+new_df = spark.sparkContext.parallelize(result_list).toDF()
+new_df.dropDuplicates().show()
+#+-----+--------------------+--------------------+
+#|   id|                text|               topic|
+#+-----+--------------------+--------------------+
+#|38907|Path: cantaloupe....|       comp.graphics|
+#|60691|Path: cantaloupe....|comp.sys.ibm.pc.h...|
+#|51996|Path: cantaloupe....|comp.sys.mac.hard...|
+#|38758|Xref: cantaloupe....|       comp.graphics|
+#|38904|Xref: cantaloupe....|       comp.graphics|
+#| 9622|Xref: cantaloupe....|comp.os.ms-window...|
+#|67386|Path: cantaloupe....|      comp.windows.x|
+#|52059|Xref: cantaloupe....|comp.sys.mac.hard...|
+#|66400|Newsgroups: comp....|      comp.windows.x|
+#|60841|Path: cantaloupe....|comp.sys.ibm.pc.h...|
+#|10094|Path: cantaloupe....|comp.os.ms-window...|
+#| 9911|Xref: cantaloupe....|comp.os.ms-window...|
+#| 9943|Path: cantaloupe....|comp.os.ms-window...|
+#|60992|Newsgroups: comp....|comp.sys.ibm.pc.h...|
+#|52010|Path: cantaloupe....|comp.sys.mac.hard...|
+#|38750|Path: cantaloupe....|       comp.graphics|
+#| 9485|Xref: cantaloupe....|comp.os.ms-window...|
+#| 9902|Newsgroups: comp....|comp.os.ms-window...|
+#|61044|Path: cantaloupe....|comp.sys.ibm.pc.h...|
+#|52190|Path: cantaloupe....|comp.sys.mac.hard...|
+#+-----+--------------------+--------------------+
+#only showing top 20 rows
+
+labeledNewsGroups = df.withColmn('label', df.topic.like('comp%').cast('double'))
+lebeledNewsGroups.sample(False, 0.003, 10).show(8)
+
+#+------+--------------------+--------------------+-----+
+#|    id|                text|               topic|label|
+#+------+--------------------+--------------------+-----+
+#| 68232|Newsgroups: comp....|      comp.windows.x|  1.0|
+#| 14989|Path: cantaloupe....|           sci.crypt|  0.0|
+#| 15248|Xref: cantaloupe....|           sci.crypt|  0.0|
+#| 15736|Path: cantaloupe....|           sci.crypt|  0.0|
+#| 20738|Path: cantaloupe....|soc.religion.chri...|  0.0|
+#| 21784|Xref: cantaloupe....|soc.religion.chri...|  0.0|
+#| 54248|Xref: cantaloupe....|  talk.politics.guns|  0.0|
+#|178606|Xref: cantaloupe....|  talk.politics.misc|  0.0|
+#+------+--------------------+--------------------+-----+
+#only showing top 8 rows
 ```
 
+### 4. 切分训练集和测试集
+
+```python
+train_set, test_set = labeledNewsGroups.randomSplit([0.8, 0.2], 2018)
+print('总样本文档数：', labeledNewsGroups.count())
+print('训练样本文档数：', train_set.count())
+print('测试样本文档数', test_set.count())
+```
+
+总样本文档数: 2000 
+
+训练样本文档数: 1599 
+
+测试样本文档数: 401
+
+### 5. 提取特征并训练模型
+
+```python
+from pyspark.ml.linalg import Vector
+from pyspark.ml import Pipeline, PipelineModel
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml.tuning import ParamGridBuilder, CrossVlidator
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
+from pyspark.ml.feature import HashingTG, StopWordsRemover, IDF, Tokenizer
+
+tokenizer = Tokenizer().setInputCol('text').setOutputCol('words')
+remover = StopWordsRemover().setInputCol('words').setOutputCol('filtered').setCaseSensitive(False)
+hashingTF = HashingTF().setNumFeatures(1000).setInputCol('filtered').setOutputCol('rawFeatures')
+idf = IDF().setInputCol('rawFeatures').setOutputCol('features').setMinDocFreq(0)
+lr = LogisticRegression().setRegParam(0.01).setThreshold(0.5)
+pipeline=Pipeline(stages=[tokenizer,remover,hashingTF,idf,lr])
+
+print('模型训练数据的特征列为：', lr.getFeaturesCol())
+print('模型训练数据的标签列为：', lr.getLabelCol())
+print('逻辑回归的阈值为：', lr.getThreshold())
+# 模型训练数据的特征列为: features
+# 模型训练数据的标签列为: label
+# 逻辑回归的阈值为: 0.5
+
+model = pipeline.fit(train_set)
+predictions = model.transform(test_set)
+predictions.select('id','topic','probability','prediction','label').sample(False,0.01,10).show(5)
+predictions.select('id','topic','probability','prediction',
+                  'label').filter(predictions.topic.like('comp%')).sample(False,0.1,10).show(5)
+```
+
+输出结果：
+
+```
++------+--------------------+--------------------+----------+-----+
+|    id|               topic|         probability|prediction|label|
++------+--------------------+--------------------+----------+-----+
+|105163|  rec.sport.baseball|[0.81527420561427...|       0.0|  0.0|
+| 37936|       comp.graphics|[0.12321073437214...|       1.0|  1.0|
+| 54080|    rec.sport.hockey|[0.92831103701444...|       0.0|  0.0|
+|  9639|comp.os.ms-window...|[0.06921916285255...|       1.0|  1.0|
+|178341|  talk.politics.misc|[0.29668758882914...|       1.0|  0.0|
++------+--------------------+--------------------+----------+-----+
+only showing top 5 rows
+
++-----+--------------------+--------------------+----------+-----+
+|   id|               topic|         probability|prediction|label|
++-----+--------------------+--------------------+----------+-----+
+|10806|comp.os.ms-window...|[0.60576722821978...|       0.0|  1.0|
+|38904|       comp.graphics|[0.82759371561803...|       0.0|  1.0|
+|52081|comp.sys.mac.hard...|[0.88200094471566...|       0.0|  1.0|
+|61175|comp.sys.ibm.pc.h...|[0.57293620744188...|       0.0|  1.0|
+|67383|      comp.windows.x|[0.61164229562805...|       0.0|  1.0|
++-----+--------------------+--------------------+----------+-----+
+only showing top 5 rows
+
+```
+
+AUC结果值
+
+```python
+evaluator = BinaryClassificationEvaluator().setMetricName('areaUnderROC')
+print('ROC曲线下方的面积（AUC)', evaluator.evaluate(predictions))
+# ROC曲线下方的面积(AUC): 0.9149592343140724
+```
+
+### 6. 网格搜索交叉验证调参
+
+```python
+paramGrid = ParamGridBuilder().addGrid(
+    hashingTF.numFeatures,[1000,10000,100000]).addGrid(idf.minDocFreq, [0,10,100]).build()
+cv = CrossValidator().setEstimator(
+    pipeline).setEvaluator(evaluator).setEstimatorParamMaps(paramGrid).setNumGolds(3)
+cvModel = cv.fit(train_set)
+print('最好的参数训练模型， ROC曲线下方的面积（AUC)', evaluator.evaluate(cvModel.transform(test_set)))
+# 最好的参数训练模型，ROC曲线下方的面积(AUC) 0.9815313718539507
+```
+
+调参前后对比
+
+```python
+print('未作参数选择的模型，ROC曲线下方的面积(AUC)：', evaluator.evaluate(predictions))
+print('网格搜索调参的模型，ROC曲线下方的面积(AUC)：',evaluator.evaluate(cvModel.transform(test_set)))
+spark.stop()
+# 未做参数选择的模型，ROC曲线下方的面积(AUC): 0.9149592343140727
+# 网格搜索调参后的模型，ROC曲线下方的面积(AUC): 0.9815313718539508
+```
+
+## 实例2： kaggle比赛应用
+
+### 1. 环境准备
+
+```python
+import re
+from pyspark.sql import SparkSession
+from pyspark.ml.feature import StringIndexer, VectorAssembler
+from pyspark.ml.regression import RandomForestRegressor, RandomForestRegressionModel
+from pyspark.ml import Pipeline, PipelineModel
+from pyspark.ml.evaluation import RegressionEvaluator
+from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
+from pyspark.mllib.evaluation import RegressionMetrics
+```
+
+### 2. 问题背景与数据
+
+When you've been devastated by a serious car accident, your focus is on the things that matter the most: family, frends, and other loved ones. Pushing paper with your insurance agents is the last place you want your time or mental energy spent.This is why [Allstate](https://www.allstate.com/), a personal insurer in the United States, is continually seeking fresh ideas to improve their claims service for the over 16 million households they protect.
+
+Allstate is currently developing automated methods of predicting the cost, and hence severity, of calims. Inthis recruitmengt challenge, kagglers are invited to show off their creativity and flex their technical chops by creating an algorithm which accurately predicts claims severity. Aspiring competitors will demonstrate insight into better ways to predict claims severity for the chance to be part of Allstate's efforts to ensure a worry-free customer experience.
+
+```python
+import pandas as pd
+data = pd.read_csv('train.csv')
+data.head()
+```
+
+|      | id   | cat1 | cat2 | cat3 | cat4 | cat5 | cat6 | cat7 | cat8 | cat9 | ...  | cont6    | cont7    | cont8   | cont9   | cont10  | cont11   | cont12   | cont13   | cont14   | loss    |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | -------- | -------- | ------- | ------- | ------- | -------- | -------- | -------- | -------- | ------- |
+| 0    | 1    | A    | B    | A    | B    | A    | A    | A    | A    | B    | ...  | 0.718367 | 0.335060 | 0.30260 | 0.67135 | 0.83510 | 0.569745 | 0.594646 | 0.822493 | 0.714843 | 2213.18 |
+| 1    | 2    | A    | B    | A    | A    | A    | A    | A    | A    | B    | ...  | 0.438917 | 0.436585 | 0.60087 | 0.35127 | 0.43919 | 0.338312 | 0.366307 | 0.611431 | 0.304496 | 1283.60 |
+| 2    | 5    | A    | B    | A    | A    | B    | A    | A    | A    | B    | ...  | 0.289648 | 0.315545 | 0.27320 | 0.26076 | 0.32446 | 0.381398 | 0.373424 | 0.195709 | 0.774425 | 3005.09 |
+| 3    | 10   | B    | B    | A    | B    | A    | A    | A    | A    | B    | ...  | 0.440945 | 0.391128 | 0.31796 | 0.32128 | 0.44467 | 0.327915 | 0.321570 | 0.605077 | 0.602642 | 939.85  |
+| 4    | 11   | A    | B    | A    | B    | A    | A    | A    | A    | B    | ...  | 0.178193 | 0.247408 | 0.24564 | 0.22089 | 0.21230 | 0.204687 | 0.202213 | 0.246011 | 0.432606 | 2763.85 |
+
+ 5 rows × 132 columns
+
+```
+data.info()
+```
+
+`<class 'pandas.core.frame.DataFrame'> ` RangeIndex: 188318 entries, 0 to 188317 Columns: 132 entries, id to loss dtypes: float64(15), int64(1), object(116) memory usage: 189.7+ MB
+
+```python
+data.describe()
+```
+
+| id    | cont1         | cont2         | cont3         | cont4         | cont5         | cont6         | cont7         | cont8         | cont9         | cont10        | cont11        | cont12        | cont13        | cont14        | loss          |               |
+| ----- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| count | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 | 188318.000000 |
+| mean  | 294135.982561 | 0.493861      | 0.507188      | 0.498918      | 0.491812      | 0.487428      | 0.490945      | 0.484970      | 0.486437      | 0.485506      | 0.498066      | 0.493511      | 0.493150      | 0.493138      | 0.495717      | 3037.337686   |
+| std   | 169336.084867 | 0.187640      | 0.207202      | 0.202105      | 0.211292      | 0.209027      | 0.205273      | 0.178450      | 0.199370      | 0.181660      | 0.185877      | 0.209737      | 0.209427      | 0.212777      | 0.222488      | 2904.086186   |
+| min   | 1.000000      | 0.000016      | 0.001149      | 0.002634      | 0.176921      | 0.281143      | 0.012683      | 0.069503      | 0.236880      | 0.000080      | 0.000000      | 0.035321      | 0.036232      | 0.000228      | 0.179722      | 0.670000      |
+| 25%   | 147748.250000 | 0.346090      | 0.358319      | 0.336963      | 0.327354      | 0.281143      | 0.336105      | 0.350175      | 0.312800      | 0.358970      | 0.364580      | 0.310961      | 0.311661      | 0.315758      | 0.294610      | 1204.460000   |
+| 50%   | 294539.500000 | 0.475784      | 0.555782      | 0.527991      | 0.452887      | 0.422268      | 0.440945      | 0.438285      | 0.441060      | 0.441450      | 0.461190      | 0.457203      | 0.462286      | 0.363547      | 0.407403      | 2115.570000   |
+| 75%   | 440680.500000 | 0.623912      | 0.681761      | 0.634224      | 0.652072      | 0.643315      | 0.655021      | 0.591045      | 0.623580      | 0.566820      | 0.614590      | 0.678924      | 0.675759      | 0.689974      | 0.724623      | 3864.045000   |
+| max   | 587633.000000 | 0.984975      | 0.862654      | 0.944251      | 0.954297      | 0.983674      | 0.997162      | 1.000000      | 0.980200      | 0.995400      | 0.994980      | 0.998742      | 0.998484      | 0.988494      | 0.844848      | 121012.250000 |
+
+### 3. spark 建模与训练
+
+```python
+sparkSession = (SparkSession.builder
+                .appName('AllstateClaimsSeverityRandomForestRegressor').getOrCreate())
+print('读取与载入数据。。。')
+trainInput = (sparkSession.read.option('header', 'true').option('inferSchema', 'true')
+             .csv('train.csv').cache())
+testInput = (SparkSession.read.option('header', 'true')
+            .option('inferSchema', 'true')
+            .csv('test.csv')
+            .cache())
+print('数据载入完毕。。。')
+
+data = trainInput.withColumnRenamed('loss', 'label')
+[trainingData, validationData] = data.randomSplit([0.7, 0.3])
+trainingData.cache()
+validationData.cache()
+testData = testInput.cache()
+
+# 数据与特征处理
+# 对类别型的特征进行处理...
+# 对类别型的列用StringIndexer或者OneHotEncoder
+isCateg = lambda c : c.startsWith('cat')
+categNewCol = lambda c : 'idx_{0}'.format(c) if (isCateg(c)) else c
+
+stringIndexerStages = map(lambda c : StringIndexer(inputCol=c, outputCol=categNewCol(c))
+                         .fit(trainInput.select(c).union(testInput.select(c))), 
+                         filter(isCateg, trainingData.columns))
+# 干掉特别多类别的咧（类似ID列）
+removeTooManyCategs = lambda c : not re.match(r'cat(109$|110$|112$|113$|116$)', c)
+# 只保留特征列
+onlyFeaturesCols = lambda c : not re.match(r'id|label', c)
+# 用上述函数进行过滤
+featureCols = map(categNewCol,
+                  filter(onlyFeatureColsc,
+                        filter(removeToomanyCategs, trainingData.columns)))
+# 组装特征
+assembler = VectorAssembler(inputCols=featureCols, outputCol='features')
+
+# 使用随机森林进行回归
+algo = RandomForestRegressor(featuresCol='features', labelCol='label')
+
+stages = stringIndexerStages
+stages.append(assembler)
+stages.append(algo)
+
+# 构建pipeline
+pipeline = Pipeline(stages=stages)
+
+# K折交叉验证。。
+numTrees=[5,20]
+maxDepth=[4,6]
+maxBins=[32]
+numFolds=3
+
+paramGrid = (ParamGridBuilder()
+            .addGrid(algo.numTrees, numTrees)
+            .addGrid(algo.maxDepth, maxDepth)
+            .addGrid(algo.maxBins, maxBins)
+            .build())
+cv = CrossValidator(estimator=pipeline,
+                   evaluator=RegressorEvaluator(),
+                   estimatorParamMaps=paramGrid,
+                   numFolds=numFolds)
+cvModel = cv.fit(trainingData)
+trainPredictionsAndLabels = cvModel.transform(trainingData).select('label','prediction').rdd
+validPredictionsAndLabels = cvModel.transform(validationData).select('label', 'prediction').rdd
+
+trainRegressionMetrics = RegressionMetrics(trainPredictionsAndLabels)
+validRegressionMetrics = RegressionMetrics(validPredictionsAndLabels)
+
+bestModel = cvModel.bestModel
+featureImportances = bestModel.stages[-1].featureImportances.toArray() # 特征重要度
+
+print("TrainingData count: {0}".format(trainingData.count()))
+print("ValidationData count: {0}".format(validationData.count()))
+print("TestData count: {0}".format(testData.count()))
+print("=====================================================================")
+print("Param algoNumTrees = {0}".format(",".join(map(lambda x:str(x), numTrees))))
+print("Param algoMaxDepth = {0}".format(",".join(map(lambda x:str(x), maxDepth))))
+print("Param algoMaxBins = {0}".format(",".join(map(lambda x:str(x), maxBins))))
+print("Param numFolds = {0}".format(numFolds))
+print("=====================================================================\n")
+print("Training data MSE = {0}".format(trainRegressionMetrics.meanSquaredError))
+print("Training data RMSE = {0}".format(trainRegressionMetrics.rootMeanSquaredError))
+print("Training data R-squared = {0}".format(trainRegressionMetrics.r2))
+print("Training data MAE = {0}".format(trainRegressionMetrics.meanAbsoluteError))
+print("Training data Explained variance = {0}".format(trainRegressionMetrics.explainedVariance))
+print("=====================================================================\n")
+print("Validation data MSE = {0}".format(validRegressionMetrics.meanSquaredError))
+print("Validation data RMSE = {0}".format(validRegressionMetrics.rootMeanSquaredError))
+print("Validation data R-squared = {0}".format(validRegressionMetrics.r2))
+print("Validation data MAE = {0}".format(validRegressionMetrics.meanAbsoluteError))
+print("Validation data Explained variance = {0}".format(validRegressionMetrics.explainedVariance))
+print("=====================================================================\n")
+print("特征重要度:\n{0}\n".format("\n".join(map(lambda z: "{0} = {1}".format(str(z[0]),str(z[1])), zip(featureCols, featureImportances)))))
+```
+
+保存预测结果到CSV文件，用以提交
+
+```python
+cvMOdel.tranform(testData).select('id','prediction').withColumnRenamed('prediction', 'loss').coalesce(1).write.format('csv').option('header', 'true').save('rf_sub.csv')
+```
+
+### 4. 用GBDT拟合
+
+```python
+from pyspark.ml.regression import GBTRegressor, GbTRegressionModel
+algo2 = GBTRegressor(featuresCol='features', labelCol='label')
+
+stages2 = stringIndexerStages
+stages2.append(assembler)
+stages2.append(algo2)
+
+pipeline2 = Pipeline(stages=stages2)
+# K折交叉验证
+numTrees = [5, 20]
+maxDepth = [4, 6]
+maxBins = [32]
+numFolds = 3
+
+paramGrid = (ParamGridBuilder()
+            .addGrid(algo2.numTrees, numTrees)
+            .addGrid(algo2.maxDepth, maxDepth)
+            .addGrid(algo2.maxBins.maxBins)
+            .builder())
+cv = CrossValidator(estimator=pipeline2,
+                   evaluator=RegressionEvaluator(),
+                   estimatorParamMaps=paramGrid,
+                   numFolds=numFolds)
+cvModel = cv.fit(trainingData)
+# 检验模型效果
+trainPredictionsAndLabels = cvModel.transform(trainingData).select('label', 'prediction').rdd
+validPredictionsAndLabels = cvModel.transform(valiationData).select('label', 'prediction').rdd
+trainRegressionMetrics = RegressionMetrics(trainPredictionsAndLabels)
+validRegressionMetrics = RegressionMetrics(validPredictionsAndLabels)
+
+bestModel = cvModel.bestModel
+featureImportances = bestModel.stages[-1].featureImportances.toArray()
+
+print("TrainingData count: {0}".format(trainingData.count()))
+print("ValidationData count: {0}".format(validationData.count()))
+print("TestData count: {0}".format(testData.count()))
+print("=====================================================================")
+print("Param algoNumTrees = {0}".format(",".join(map(lambda x:str(x), numTrees))))
+print("Param algoMaxDepth = {0}".format(",".join(map(lambda x:str(x), maxDepth))))
+print("Param algoMaxBins = {0}".format(",".join(map(lambda x:str(x), maxBins))))
+print("Param numFolds = {0}".format(numFolds))
+print("=====================================================================\n")
+print("Training data MSE = {0}".format(trainRegressionMetrics.meanSquaredError))
+print("Training data RMSE = {0}".format(trainRegressionMetrics.rootMeanSquaredError))
+print("Training data R-squared = {0}".format(trainRegressionMetrics.r2))
+print("Training data MAE = {0}".format(trainRegressionMetrics.meanAbsoluteError))
+print("Training data Explained variance = {0}".format(trainRegressionMetrics.explainedVariance))
+print("=====================================================================\n")
+print("Validation data MSE = {0}".format(validRegressionMetrics.meanSquaredError))
+print("Validation data RMSE = {0}".format(validRegressionMetrics.rootMeanSquaredError))
+print("Validation data R-squared = {0}".format(validRegressionMetrics.r2))
+print("Validation data MAE = {0}".format(validRegressionMetrics.meanAbsoluteError))
+print("Validation data Explained variance = {0}".format(validRegressionMetrics.explainedVariance))
+print("=====================================================================\n")
+print("特征重要度:\n{0}\n".format("\n".join(map(lambda z: "{0} = {1}".format(str(z[0]),str(z[1])), zip(featureCols, featureImportances)))))
 ```
 
